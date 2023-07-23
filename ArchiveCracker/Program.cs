@@ -10,7 +10,7 @@ namespace ArchiveCracker
         private const string CommonPasswordsFilePath = "common_passwords.txt";
         private const string FoundPasswordsFilePath = "found_passwords.json";
 
-        private static ConcurrentBag<(string, string)> FoundPasswords { get; set; } = new();
+        private static ConcurrentBag<ArchivePasswordPair> FoundPasswords { get; set; } = new();
 
         private static readonly Dictionary<string, IArchiveStrategy> ArchiveStrategies = new()
         {
@@ -37,14 +37,20 @@ namespace ArchiveCracker
         private static void Init()
         {
             EnsureFileExistsAndPrintInfo(CommonPasswordsFilePath, "common passwords");
-            EnsureFileExistsAndPrintInfo(UserPasswordsFilePath, "user passwords");
+            CommonPasswords = new List<string>(File.ReadAllLines(CommonPasswordsFilePath));
 
+            EnsureFileExistsAndPrintInfo(UserPasswordsFilePath, "user passwords");
             if (File.ReadAllLines(UserPasswordsFilePath).Length == 0)
             {
-                Console.WriteLine("WARNING: No user passwords provided. The program will only attempt the common passwords. If there are no common passwords, no passwords will be attempted.");
+                Console.WriteLine(
+                    "WARNING: No user passwords provided. The program will only attempt the common passwords. If there are no common passwords, no passwords will be attempted.");
             }
 
             EnsureFileExistsAndPrintInfo(FoundPasswordsFilePath, "previously found passwords");
+
+            FoundPasswords =
+                JsonConvert.DeserializeObject<ConcurrentBag<ArchivePasswordPair>>(
+                    File.ReadAllText(FoundPasswordsFilePath)) ?? new ConcurrentBag<ArchivePasswordPair>();
         }
 
         private static void EnsureFileExistsAndPrintInfo(string filePath, string dataType)
@@ -54,13 +60,16 @@ namespace ArchiveCracker
             var dataCount = File.ReadAllLines(filePath).Length;
             Console.WriteLine($"Loaded {dataCount} {dataType}.");
         }
-        
+
         private static void EnsureFileExists(string filePath)
         {
             if (File.Exists(filePath)) return;
 
-            File.Create(filePath).Close();
-            Console.WriteLine($"Created new file: {filePath}");
+            using (File.Create(filePath))
+            {
+            }
+
+            Console.WriteLine($"WARNING: {filePath} file did not exist and was created.");
         }
 
 
@@ -78,7 +87,7 @@ namespace ArchiveCracker
 
                     if (!ArchiveStrategies.TryGetValue(ext, out var strategy) ||
                         !strategy.IsPasswordProtected(file) ||
-                        FoundPasswords.Any(fp => fp.Item1 == file)) return;
+                        FoundPasswords.Any(fp => fp.File == file)) return;
 
                     if (!ProtectedArchives.ContainsKey(strategy))
                     {
@@ -154,7 +163,7 @@ namespace ArchiveCracker
 
         private static void AddPasswordAndSave(string file, string password)
         {
-            FoundPasswords.Add((file, password));
+            FoundPasswords.Add(new ArchivePasswordPair { File = file, Password = password });
             SaveFoundPasswords();
         }
 
