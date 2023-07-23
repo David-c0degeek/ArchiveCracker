@@ -1,4 +1,7 @@
 ﻿using System.Collections.Concurrent;
+using ArchiveCracker.Models;
+using ArchiveCracker.Strategies;
+using CommandLine;
 using Newtonsoft.Json;
 
 namespace ArchiveCracker
@@ -6,9 +9,9 @@ namespace ArchiveCracker
     internal abstract class Program
     {
         private static List<string> CommonPasswords { get; set; } = new List<string>();
-        private const string UserPasswordsFilePath = "user_passwords.txt";
-        private const string CommonPasswordsFilePath = "common_passwords.txt";
-        private const string FoundPasswordsFilePath = "found_passwords.json";
+        private static string _userPasswordsFilePath = "user_passwords.txt";
+        private static string _commonPasswordsFilePath = "common_passwords.txt";
+        private static string _foundPasswordsFilePath = "found_passwords.json";
 
         private static ConcurrentBag<ArchivePasswordPair> FoundPasswords { get; set; } = new();
 
@@ -22,35 +25,38 @@ namespace ArchiveCracker
 
         private static readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> ProtectedArchives = new();
 
-        private static void Main()
+        private static void Main(string[] args)
         {
-            Console.WriteLine("Initializing...");
-            Init();
+            Parser.Default.ParseArguments<Options>(args)
+                .WithParsed(o =>
+                {
+                    _commonPasswordsFilePath = Path.Combine(o.PathToZipFiles, "common_passwords.txt");
+                    _userPasswordsFilePath = o.UserPasswordsFilePath;
+                    _foundPasswordsFilePath = Path.Combine(o.PathToZipFiles, "found_passwords.json");
 
-            Console.WriteLine("Loading archives...");
-            LoadArchives();
-
-            Console.WriteLine("Checking passwords...");
-            CheckPasswords();
+                    Init();
+                    LoadArchives(o.PathToZipFiles);
+                    CheckPasswords();
+                });
         }
 
         private static void Init()
         {
-            EnsureFileExistsAndPrintInfo(CommonPasswordsFilePath, "common passwords");
-            CommonPasswords = new List<string>(File.ReadAllLines(CommonPasswordsFilePath));
+            EnsureFileExistsAndPrintInfo(_commonPasswordsFilePath, "common passwords");
+            CommonPasswords = new List<string>(File.ReadAllLines(_commonPasswordsFilePath));
 
-            EnsureFileExistsAndPrintInfo(UserPasswordsFilePath, "user passwords");
-            if (File.ReadAllLines(UserPasswordsFilePath).Length == 0)
+            EnsureFileExistsAndPrintInfo(_userPasswordsFilePath, "user passwords");
+            if (File.ReadAllLines(_userPasswordsFilePath).Length == 0)
             {
                 Console.WriteLine(
                     "WARNING: No user passwords provided. The program will only attempt the common passwords. If there are no common passwords, no passwords will be attempted.");
             }
 
-            EnsureFileExistsAndPrintInfo(FoundPasswordsFilePath, "previously found passwords");
+            EnsureFileExistsAndPrintInfo(_foundPasswordsFilePath, "previously found passwords");
 
             FoundPasswords =
                 JsonConvert.DeserializeObject<ConcurrentBag<ArchivePasswordPair>>(
-                    File.ReadAllText(FoundPasswordsFilePath)) ?? new ConcurrentBag<ArchivePasswordPair>();
+                    File.ReadAllText(_foundPasswordsFilePath)) ?? new ConcurrentBag<ArchivePasswordPair>();
         }
 
         private static void EnsureFileExistsAndPrintInfo(string filePath, string dataType)
@@ -73,12 +79,12 @@ namespace ArchiveCracker
         }
 
 
-        private static void LoadArchives()
+        private static void LoadArchives(string pathToZipFiles)
         {
             try
             {
-                var files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.*", SearchOption.AllDirectories);
-
+                var files = Directory.GetFiles(pathToZipFiles, "*.*", SearchOption.AllDirectories);
+                
                 Console.WriteLine($"Found {files.Length} files. Checking for protected archives...");
 
                 Parallel.ForEach(files, file =>
@@ -141,7 +147,7 @@ namespace ArchiveCracker
 
         private static void CheckUserPasswords(IArchiveStrategy strategy, string file)
         {
-            using var sr = new StreamReader(UserPasswordsFilePath);
+            using var sr = new StreamReader(_userPasswordsFilePath);
 
             while (sr.ReadLine() is { } line)
             {
@@ -171,7 +177,7 @@ namespace ArchiveCracker
         {
             try
             {
-                using var sw = new StreamWriter(CommonPasswordsFilePath, true);
+                using var sw = new StreamWriter(_commonPasswordsFilePath, true);
                 sw.WriteLine(password);
             }
             catch (IOException ex)
@@ -185,7 +191,7 @@ namespace ArchiveCracker
             try
             {
                 var json = JsonConvert.SerializeObject(FoundPasswords, Formatting.Indented);
-                File.WriteAllText(FoundPasswordsFilePath, json);
+                File.WriteAllText(_foundPasswordsFilePath, json);
             }
             catch (IOException ex)
             {

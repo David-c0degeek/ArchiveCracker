@@ -1,4 +1,4 @@
-﻿namespace ArchiveCracker;
+﻿namespace ArchiveCracker.Strategies;
 
 internal interface IArchiveStrategy
 {

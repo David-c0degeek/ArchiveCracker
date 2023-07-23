@@ -1,4 +1,4 @@
-﻿namespace ArchiveCracker;
+﻿namespace ArchiveCracker.Models;
 
 public class ArchivePasswordPair
 {

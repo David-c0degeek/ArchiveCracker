@@ -1,16 +1,16 @@
 ﻿using SharpCompress.Archives;
-using SharpCompress.Archives.Rar;
+using SharpCompress.Archives.Zip;
 using SharpCompress.Readers;
 
-namespace ArchiveCracker;
+namespace ArchiveCracker.Strategies;
 
-internal class RarArchiveStrategy : IArchiveStrategy
+internal class ZipArchiveStrategy : IArchiveStrategy
 {
     public bool IsPasswordProtected(string file)
     {
         try
         {
-            using var archive = ArchiveFactory.Open(file);
+            using var archive = ZipArchive.Open(file);
             foreach (var entry in archive.Entries)
             {
                 if (!entry.IsDirectory)
@@ -34,7 +34,7 @@ internal class RarArchiveStrategy : IArchiveStrategy
     {
         try
         {
-            using var archive = RarArchive.Open(file, new ReaderOptions
+            using var archive = ZipArchive.Open(file, new ReaderOptions
             {
                 Password = password,
                 LookForHeader = true

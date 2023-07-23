@@ -1,40 +1,21 @@
 ﻿using SharpCompress.Archives;
-using SharpCompress.Archives.Zip;
+using SharpCompress.Archives.SevenZip;
 using SharpCompress.Readers;
 
-namespace ArchiveCracker;
+namespace ArchiveCracker.Strategies;
 
-internal class ZipArchiveStrategy : IArchiveStrategy
+internal class SevenZipArchiveStrategy : IArchiveStrategy
 {
     public bool IsPasswordProtected(string file)
     {
-        try
-        {
-            using var archive = ZipArchive.Open(file);
-            foreach (var entry in archive.Entries)
-            {
-                if (!entry.IsDirectory)
-                {
-                    entry.WriteTo(Stream.Null);
-                }
-            }
-            return false;
-        }
-        catch (SharpCompress.Common.CryptographicException)
-        {
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        return new RarArchiveStrategy().IsPasswordProtected(file);
     }
 
     public bool IsPasswordCorrect(string file, string password)
     {
         try
         {
-            using var archive = ZipArchive.Open(file, new ReaderOptions
+            using var archive = SevenZipArchive.Open(file, new ReaderOptions
             {
                 Password = password,
                 LookForHeader = true
