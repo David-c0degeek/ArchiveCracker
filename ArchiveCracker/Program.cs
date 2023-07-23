@@ -1,269 +1,174 @@
-﻿using System.IO.Compression;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Newtonsoft.Json;
-using SharpCompress.Archives;
-using SharpCompress.Archives.Rar;
-using SharpCompress.Archives.SevenZip;
-using SharpCompress.Common;
-using SharpCompress.Readers;
 
-namespace ArchiveCracker
+namespace ArchiveCracker;
+
+internal abstract class Program
 {
-    internal abstract class Program
+    private static List<string>? CommonPasswords { get; set; }
+    private const string UserPasswordsFilePath = "user_passwords.txt";
+    private const string CommonPasswordsFilePath = "common_passwords.txt";
+    private const string FoundPasswordsFilePath = "found_passwords.json";
+
+    private static ConcurrentBag<(string, string)> FoundPasswords { get; set; } = new();
+
+    private static readonly Dictionary<string, IArchiveStrategy> ArchiveStrategies;
+    private static readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> ProtectedArchives = new();
+
+    static Program()
     {
-        private static List<string>? CommonPasswords { get; set; }
-
-        private static ConcurrentBag<(string, string)> FoundPasswords { get; set; } = new();
-
-        private static ConcurrentBag<string> _rarFiles = new();
-        private static ConcurrentBag<string> _sevenZFiles = new();
-        private static ConcurrentBag<string> _zipFiles = new();
-        private static ConcurrentBag<string> _splitFiles = new();
-
-        private static void Main()
+        ArchiveStrategies = new Dictionary<string, IArchiveStrategy>
         {
-            Init();
-            LoadArchives();
-            CheckPasswords();
-            SaveFoundPasswords();
+            { ".rar", new RarArchiveStrategy() },
+            { ".7z", new SevenZipArchiveStrategy() },
+            { ".zip", new ZipArchiveStrategy() },
+            { ".001", new SevenZipArchiveStrategy() } // Checking password protection on first volume
+        };
+
+        if (File.Exists(FoundPasswordsFilePath))
+        {
+            FoundPasswords =
+                JsonConvert.DeserializeObject<ConcurrentBag<(string, string)>>(
+                    File.ReadAllText(FoundPasswordsFilePath)) ?? new ConcurrentBag<(string, string)>();
         }
+    }
 
-        private static void Init()
+    private static void Main()
+    {
+        Init();
+        LoadArchives();
+        CheckPasswords();
+    }
+
+    private static void Init()
+    {
+        if (!File.Exists(CommonPasswordsFilePath))
         {
-            CommonPasswords = new List<string>(File.ReadAllLines("common_passwords.txt"));
+            File.Create(CommonPasswordsFilePath).Close();
+            CommonPasswords = new List<string>();
         }
-
-        private static void LoadArchives()
+        else
         {
-            _rarFiles = new ConcurrentBag<string>();
-            _sevenZFiles = new ConcurrentBag<string>();
-            _zipFiles = new ConcurrentBag<string>();
-            _splitFiles = new ConcurrentBag<string>();
+            CommonPasswords = new List<string>(File.ReadAllLines(CommonPasswordsFilePath));
+        }
+    }
 
+    private static void LoadArchives()
+    {
+        try
+        {
             var files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.*", SearchOption.AllDirectories);
 
             Parallel.ForEach(files, file =>
             {
                 var ext = Path.GetExtension(file).ToLower();
-                switch (ext)
+
+                if (!ArchiveStrategies.TryGetValue(ext, out var strategy) ||
+                    !strategy.IsPasswordProtected(file) ||
+                    FoundPasswords.Any(fp => fp.Item1 == file)) return;
+
+                if (!ProtectedArchives.ContainsKey(strategy))
                 {
-                    case ".rar":
-                        if (IsRarPasswordProtected(file))
-                        {
-                            _rarFiles.Add(file);
-                        }
-
-                        break;
-                    case ".7z":
-                        if (IsSevenZPasswordProtected(file))
-                        {
-                            _sevenZFiles.Add(file);
-                        }
-
-                        break;
-                    case ".zip":
-                        if (IsZipPasswordProtected(file))
-                        {
-                            _zipFiles.Add(file);
-                        }
-
-                        break;
-                    case ".001":
-                        if (IsSevenZPasswordProtected(file)) // Checking password protection on first volume
-                        {
-                            _splitFiles.Add(file);
-                        }
-
-                        break;
+                    ProtectedArchives[strategy] = new ConcurrentBag<string>();
                 }
+
+                ProtectedArchives[strategy].Add(file);
             });
         }
-
-        private static bool IsZipPasswordProtected(string file)
+        catch (IOException ex)
         {
-            try
-            {
-                using var archive = ZipFile.OpenRead(file);
-                foreach (var entry in archive.Entries)
-                {
-                    if (entry.Name.EndsWith("/")) continue; // exclude directories
-
-                    // Attempt to open the stream which will throw if password protected
-                    using (entry.Open())
-                    {
-                    }
-                }
-
-                return false;
-            }
-            catch (InvalidDataException)
-            {
-                // If it throws an InvalidDataException, the file is password protected.
-                return true;
-            }
-            catch
-            {
-                // If any other exception is thrown, the file might be corrupted.
-                return false;
-            }
+            Console.WriteLine($"An I/O error occurred while loading archives: {ex.Message}");
         }
-
-        private static bool IsRarPasswordProtected(string file)
+        catch (UnauthorizedAccessException ex)
         {
-            try
-            {
-                using var archive = ArchiveFactory.Open(file);
-
-                foreach (var entry in archive.Entries)
-                {
-                    if (!entry.IsDirectory)
-                    {
-                        entry.WriteTo(Stream.Null);
-                    }
-                }
-
-                return false;
-            }
-            catch (CryptographicException)
-            {
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            Console.WriteLine($"Access to a file or directory was denied: {ex.Message}");
         }
+    }
 
-        private static bool IsSevenZPasswordProtected(string file)
+    private static void CheckPasswords()
+    {
+        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+
+        foreach (var (strategy, archives) in ProtectedArchives)
         {
-            return IsRarPasswordProtected(file); // 7z and RAR password detection is the same in SharpCompress
-        }
-
-        private static void CheckPasswords()
-        {
-            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
-
-            Parallel.ForEach(_rarFiles, parallelOptions, file =>
+            Parallel.ForEach(archives, parallelOptions, file =>
             {
                 if (CommonPasswords == null) return;
 
-                foreach (var password in CommonPasswords.Where(password => IsRarPasswordCorrect(file, password)))
+                if (!CheckCommonPasswords(strategy, file))
                 {
-                    FoundPasswords.Add((file, password));
-                    break;
-                }
-            });
-
-            Parallel.ForEach(_sevenZFiles, parallelOptions, file =>
-            {
-                if (CommonPasswords == null) return;
-
-                foreach (var password in CommonPasswords.Where(password => IsSevenZPasswordCorrect(file, password)))
-                {
-                    FoundPasswords.Add((file, password));
-                    break;
-                }
-            });
-
-            Parallel.ForEach(_zipFiles, parallelOptions, file =>
-            {
-                if (CommonPasswords == null) return;
-
-                foreach (var password in CommonPasswords.Where(password => IsZipPasswordCorrect(file, password)))
-                {
-                    FoundPasswords.Add((file, password));
-                    break;
-                }
-            });
-
-            Parallel.ForEach(_splitFiles, parallelOptions, file =>
-            {
-                if (CommonPasswords == null) return;
-
-                foreach (var password in CommonPasswords.Where(password => IsSplitPasswordCorrect(file, password)))
-                {
-                    FoundPasswords.Add((file, password));
-                    break;
+                    CheckUserPasswords(strategy, file);
                 }
             });
         }
-        
-        private static bool IsRarPasswordCorrect(string file, string password)
+    }
+
+    private static bool CheckCommonPasswords(IArchiveStrategy strategy, string file)
+    {
+        if (CommonPasswords == null) return false;
+
+        foreach (var password in CommonPasswords.Where(password => strategy.IsPasswordCorrect(file, password)))
         {
-            try
-            {
-                using var archive = RarArchive.Open(file, new ReaderOptions
-                {
-                    Password = password,
-                    LookForHeader = true
-                });
-
-                foreach (var entry in archive.Entries)
-                {
-                    if (!entry.IsDirectory)
-                    {
-                        entry.WriteTo(Stream.Null);
-                    }
-                }
-
-                return true;
-            }
-            catch (CryptographicException)
-            {
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
+            AddPasswordAndSave(file, password);
+            return true;
         }
 
-        private static bool IsSevenZPasswordCorrect(string file, string password)
+        return false;
+    }
+
+
+    private static void CheckUserPasswords(IArchiveStrategy strategy, string file)
+    {
+        if (!File.Exists(UserPasswordsFilePath)) return;
+
+        using var sr = new StreamReader(UserPasswordsFilePath);
+
+        while (sr.ReadLine() is { } line)
         {
-            try
-            {
-                using var archive = SevenZipArchive.Open(file, new ReaderOptions
-                {
-                    Password = password,
-                    LookForHeader = true
-                });
+            if (!strategy.IsPasswordCorrect(file, line)) continue;
 
-                foreach (var entry in archive.Entries)
-                {
-                    if (!entry.IsDirectory)
-                    {
-                        entry.WriteTo(Stream.Null);
-                    }
-                }
+            AddPasswordAndSave(file, line);
 
-                return true;
-            }
-            catch (CryptographicException)
+            // Check if it's already in common passwords
+            if (CommonPasswords != null && !CommonPasswords.Contains(line))
             {
-                return false;
+                CommonPasswords.Add(line);
+                AppendToCommonPasswordsFile(line);
             }
-            catch
-            {
-                return false;
-            }
+
+            break;
         }
+    }
 
-        // As the built-in .NET ZipFile does not support passwords, you may need to use SharpCompress or another library here.
-        private static bool IsZipPasswordCorrect(string file, string password)
+    private static void AddPasswordAndSave(string file, string password)
+    {
+        FoundPasswords.Add((file, password));
+        SaveFoundPasswords();
+    }
+
+    private static void AppendToCommonPasswordsFile(string password)
+    {
+        try
         {
-            return false;
+            using var sw = new StreamWriter(CommonPasswordsFilePath, true);
+            sw.WriteLine(password);
         }
-
-        private static bool IsSplitPasswordCorrect(string file, string password)
+        catch (IOException ex)
         {
-            return IsSevenZPasswordCorrect(file, password);
+            Console.WriteLine($"An I/O error occurred while updating the common passwords file: {ex.Message}");
         }
-        
+    }
 
-        private static void SaveFoundPasswords()
+    private static void SaveFoundPasswords()
+    {
+        try
         {
             var json = JsonConvert.SerializeObject(FoundPasswords, Formatting.Indented);
-            File.WriteAllText("found_passwords.json", json);
+            File.WriteAllText(FoundPasswordsFilePath, json);
+        }
+        catch (IOException ex)
+        {
+            Console.WriteLine($"An I/O error occurred while saving found passwords: {ex.Message}");
         }
     }
 }
