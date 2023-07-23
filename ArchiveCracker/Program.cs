@@ -63,9 +63,13 @@ internal abstract class Program
             {
                 var ext = Path.GetExtension(file).ToLower();
 
-                if (!ArchiveStrategies.TryGetValue(ext, out var strategy) ||
-                    !strategy.IsPasswordProtected(file) ||
-                    FoundPasswords.Any(fp => fp.Item1 == file)) return;
+                // If the file extension does not correspond to an archive or the file isn't password protected or the password has already been found, skip it
+                if (!ArchiveStrategies.TryGetValue(ext, out var strategy) || 
+                    !strategy.IsPasswordProtected(file) || 
+                    FoundPasswords.Any(fp => fp.Item1 == file))
+                {
+                    return;
+                }
 
                 if (!ProtectedArchives.ContainsKey(strategy))
                 {
@@ -93,14 +97,15 @@ internal abstract class Program
         {
             Parallel.ForEach(archives, parallelOptions, file =>
             {
-                if (CommonPasswords == null) return;
-
-                if (!CheckCommonPasswords(strategy, file))
-                {
-                    CheckUserPasswords(strategy, file);
-                }
+                TryUnlockArchive(strategy, file);
             });
         }
+    }
+
+    private static void TryUnlockArchive(IArchiveStrategy strategy, string file)
+    {
+        if (CommonPasswords != null && CheckCommonPasswords(strategy, file)) return;
+        CheckUserPasswords(strategy, file);
     }
 
     private static bool CheckCommonPasswords(IArchiveStrategy strategy, string file)
