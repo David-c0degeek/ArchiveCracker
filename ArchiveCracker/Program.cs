@@ -36,24 +36,33 @@ namespace ArchiveCracker
 
         private static void Init()
         {
-            if (!File.Exists(CommonPasswordsFilePath))
+            EnsureFileExistsAndPrintInfo(CommonPasswordsFilePath, "common passwords");
+            EnsureFileExistsAndPrintInfo(UserPasswordsFilePath, "user passwords");
+
+            if (File.ReadAllLines(UserPasswordsFilePath).Length == 0)
             {
-                File.Create(CommonPasswordsFilePath).Close();
-                Console.WriteLine($"Created new common passwords file: {CommonPasswordsFilePath}");
-            }
-            else
-            {
-                CommonPasswords = new List<string>(File.ReadAllLines(CommonPasswordsFilePath));
-                Console.WriteLine($"Loaded {CommonPasswords.Count} common passwords.");
+                Console.WriteLine("WARNING: No user passwords provided. The program will only attempt the common passwords. If there are no common passwords, no passwords will be attempted.");
             }
 
-            if (File.Exists(FoundPasswordsFilePath))
-            {
-                FoundPasswords =
-                    JsonConvert.DeserializeObject<ConcurrentBag<(string, string)>>(File.ReadAllText(FoundPasswordsFilePath)) ?? new ConcurrentBag<(string, string)>();
-                Console.WriteLine($"Loaded {FoundPasswords.Count} previously found passwords.");
-            }
+            EnsureFileExistsAndPrintInfo(FoundPasswordsFilePath, "previously found passwords");
         }
+
+        private static void EnsureFileExistsAndPrintInfo(string filePath, string dataType)
+        {
+            EnsureFileExists(filePath);
+
+            var dataCount = File.ReadAllLines(filePath).Length;
+            Console.WriteLine($"Loaded {dataCount} {dataType}.");
+        }
+        
+        private static void EnsureFileExists(string filePath)
+        {
+            if (File.Exists(filePath)) return;
+
+            File.Create(filePath).Close();
+            Console.WriteLine($"Created new file: {filePath}");
+        }
+
 
         private static void LoadArchives()
         {
@@ -100,7 +109,7 @@ namespace ArchiveCracker
                 Parallel.ForEach(archives, parallelOptions, file =>
                 {
                     Console.WriteLine($"Checking passwords for file: {file}");
-                    
+
                     if (!CheckCommonPasswords(strategy, file))
                     {
                         CheckUserPasswords(strategy, file);
