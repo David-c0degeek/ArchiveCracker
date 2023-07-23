@@ -13,6 +13,7 @@ namespace ArchiveCracker
         private static string _commonPasswordsFilePath = "common_passwords.txt";
         private static string _foundPasswordsFilePath = "found_passwords.json";
 
+        private static BlockingCollection<FileOperation> FileOperationsQueue { get; set; } = new();
         private static ConcurrentBag<ArchivePasswordPair> FoundPasswords { get; set; } = new();
 
         private static readonly Dictionary<string, IArchiveStrategy> ArchiveStrategies = new()
@@ -38,6 +39,8 @@ namespace ArchiveCracker
                     LoadArchives(o.PathToZipFiles);
                     CheckPasswords();
                 });
+
+            Task.Factory.StartNew(FileOperationsWorker, TaskCreationOptions.LongRunning);
         }
 
         private static void Init()
@@ -77,14 +80,13 @@ namespace ArchiveCracker
 
             Console.WriteLine($"WARNING: {filePath} file did not exist and was created.");
         }
-
-
+        
         private static void LoadArchives(string pathToZipFiles)
         {
             try
             {
                 var files = Directory.GetFiles(pathToZipFiles, "*.*", SearchOption.AllDirectories);
-                
+
                 Console.WriteLine($"Found {files.Length} files. Checking for protected archives...");
 
                 Parallel.ForEach(files, file =>
@@ -175,6 +177,48 @@ namespace ArchiveCracker
 
         private static void AppendToCommonPasswordsFile(string password)
         {
+            FileOperationsQueue.Add(new FileOperation
+            {
+                Type = FileOperation.OperationType.AppendCommonPassword,
+                Data = password
+            });
+        }
+
+        private static void SaveFoundPasswords()
+        {
+            FileOperationsQueue.Add(new FileOperation
+            {
+                Type = FileOperation.OperationType.SaveFoundPasswords
+            });
+        }
+
+        private static void FileOperationsWorker()
+        {
+            foreach (var op in FileOperationsQueue.GetConsumingEnumerable())
+            {
+                switch (op.Type)
+                {
+                    case FileOperation.OperationType.AppendCommonPassword:
+                        if(op.Data != null)
+                        {
+                            PerformAppendToCommonPasswordsFile(op.Data);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Attempted to append a null password to the common passwords file.");
+                        }
+                        break;
+                    case FileOperation.OperationType.SaveFoundPasswords:
+                        PerformSaveFoundPasswords();
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+        }
+
+        private static void PerformAppendToCommonPasswordsFile(string password)
+        {
             try
             {
                 using var sw = new StreamWriter(_commonPasswordsFilePath, true);
@@ -185,8 +229,8 @@ namespace ArchiveCracker
                 Console.WriteLine($"An I/O error occurred while updating the common passwords file: {ex.Message}");
             }
         }
-
-        private static void SaveFoundPasswords()
+        
+        private static void PerformSaveFoundPasswords()
         {
             try
             {
