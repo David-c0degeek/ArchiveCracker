@@ -2,7 +2,7 @@
 
 namespace ArchiveCracker;
 
-public class Options
+public abstract class Options
 {
     [Option('z', "zipPath", Required = false, HelpText = "Path to the directory containing zip files.")]
     public string PathToZipFiles { get; set; } = string.Empty;

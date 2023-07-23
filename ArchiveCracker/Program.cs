@@ -8,7 +8,7 @@ namespace ArchiveCracker
 {
     internal abstract class Program
     {
-        private static List<string> CommonPasswords { get; set; } = new List<string>();
+        private static List<string> CommonPasswords { get; set; } = new();
         private static string _userPasswordsFilePath = "user_passwords.txt";
         private static string _commonPasswordsFilePath = "common_passwords.txt";
         private static string _foundPasswordsFilePath = "found_passwords.json";
@@ -31,12 +31,18 @@ namespace ArchiveCracker
             Parser.Default.ParseArguments<Options>(args)
                 .WithParsed(o =>
                 {
-                    _commonPasswordsFilePath = Path.Combine(o.PathToZipFiles, "common_passwords.txt");
-                    _userPasswordsFilePath = o.UserPasswordsFilePath;
-                    _foundPasswordsFilePath = Path.Combine(o.PathToZipFiles, "found_passwords.json");
+                    if (!string.IsNullOrEmpty(o.PathToZipFiles))
+                    {
+                        _commonPasswordsFilePath = Path.Combine(o.PathToZipFiles, "common_passwords.txt");
+                        _foundPasswordsFilePath = Path.Combine(o.PathToZipFiles, "found_passwords.json");
+                    }
+
+                    _userPasswordsFilePath = !string.IsNullOrEmpty(o.UserPasswordsFilePath)
+                        ? o.UserPasswordsFilePath
+                        : _userPasswordsFilePath;
 
                     Init();
-                    LoadArchives(o.PathToZipFiles);
+                    LoadArchives(!string.IsNullOrEmpty(o.PathToZipFiles) ? o.PathToZipFiles : ".");
                     CheckPasswords();
                 });
 
