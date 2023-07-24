@@ -1,6 +1,6 @@
 ﻿namespace ArchiveCracker.Strategies;
 
-internal interface IArchiveStrategy
+public interface IArchiveStrategy
 {
     bool IsPasswordProtected(string file);
     bool IsPasswordCorrect(string file, string password);

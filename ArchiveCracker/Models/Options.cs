@@ -1,6 +1,6 @@
 ﻿using CommandLine;
 
-namespace ArchiveCracker;
+namespace ArchiveCracker.Models;
 
 public abstract class Options
 {
