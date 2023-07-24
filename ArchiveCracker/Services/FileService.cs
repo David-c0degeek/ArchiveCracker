@@ -1,21 +1,36 @@
 ﻿using System.Collections.Concurrent;
 using ArchiveCracker.Models;
-using Newtonsoft.Json;
 using Serilog;
 
 namespace ArchiveCracker.Services;
 
 public class FileService
 {
-    private BlockingCollection<FileOperation> FileOperationsQueue { get; }
     private readonly string _commonPasswordsFilePath;
     private readonly string _foundPasswordsFilePath;
-        
-    public FileService(string commonPasswordsFilePath, string foundPasswordsFilePath, BlockingCollection<FileOperation> fileOperationsQueue)
+    private BlockingCollection<FileOperation> FileOperationsQueue { get; }
+    
+
+    public FileService(string commonPasswordsPath, string userPasswordsPath, string foundPasswordsPath, BlockingCollection<FileOperation> fileOperationsQueue)
     {
-        _commonPasswordsFilePath = commonPasswordsFilePath;
-        _foundPasswordsFilePath = foundPasswordsFilePath;
         FileOperationsQueue = fileOperationsQueue;
+        _commonPasswordsFilePath = commonPasswordsPath;
+        _foundPasswordsFilePath = foundPasswordsPath;
+        
+        if (!File.Exists(commonPasswordsPath))
+        {
+            File.Create(commonPasswordsPath).Dispose();
+        }
+
+        if (!File.Exists(userPasswordsPath))
+        {
+            File.Create(userPasswordsPath).Dispose();
+        }
+
+        if (!File.Exists(foundPasswordsPath))
+        {
+            File.Create(foundPasswordsPath).Dispose();
+        }
     }
         
     public void AppendToCommonPasswordsFile(string password)
