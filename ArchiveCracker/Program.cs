@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Text;
-using ArchiveCracker.Extensions;
 using ArchiveCracker.Models;
 using ArchiveCracker.Services;
 using ArchiveCracker.Strategies;
@@ -34,21 +33,27 @@ public abstract class Program
     {
         InitLogger();
 
-        await Parser.Default.ParseArguments<Options>(args)
-            .WithParsedAsync(SetupPaths)
-            .WithParsedAsync(CreateServices)
-            .WithParsedAsync(StartOperations)
-            .WithNotParsedAsync(errors =>
+        var result = Parser.Default.ParseArguments<Options>(args);
+
+        result.WithNotParsed(errors =>
+        {
+            foreach (var error in errors)
             {
-                foreach (var error in errors)
-                {
-                    Log.Error(error.ToString() ?? "Unknown error");
-                }
-            });
+                Log.Error(error.ToString() ?? "Unknown error");
+            }
+
+            Environment.Exit(1);
+        });
+
+        var options = ((Parsed<Options>)result).Value;
+
+        await SetupPaths(options);
+        await CreateServices();
+        await StartOperations();
 
         Cleanup();
     }
-    
+
     private static Task SetupPaths(Options options)
     {
         _zipPath = string.IsNullOrWhiteSpace(options.PathToZipFiles)
@@ -79,7 +84,7 @@ public abstract class Program
         return Task.CompletedTask;
     }
 
-    private static Task CreateServices(Options options)
+    private static Task CreateServices()
     {
         _fileService = new FileService(
             _commonPasswordsPath!,
@@ -101,10 +106,12 @@ public abstract class Program
     }
 
 
-    private static async Task StartOperations(Options options)
+    private static async Task StartOperations()
     {
         // Start the File Operations worker
-        await Task.Factory.StartNew(() =>
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+        Task.Factory.StartNew(() =>
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
         {
             try
             {
