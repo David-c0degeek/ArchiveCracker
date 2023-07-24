@@ -8,21 +8,25 @@ namespace ArchiveCracker.Services
     public class PasswordService
     {
         private readonly FileService _fileService;
-        private List<string> CommonPasswords { get; set; }
-        private ConcurrentBag<ArchivePasswordPair> FoundPasswords { get; set; }
+        private readonly List<string> _commonPasswords;
+        private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
         private readonly string _userPasswordsFilePath;
-        
-        public PasswordService(List<string> commonPasswords, ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath, FileService fileService)
+
+        public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath, FileService fileService, string commonPasswordsFilePath)
         {
-            CommonPasswords = commonPasswords;
-            FoundPasswords = foundPasswords;
+            _foundPasswords = foundPasswords;
             _userPasswordsFilePath = userPasswordsFilePath;
             _fileService = fileService;
+
+            // Initialize CommonPasswords list
+            _commonPasswords = File.Exists(commonPasswordsFilePath)
+                ? File.ReadAllLines(commonPasswordsFilePath).ToList()
+                : new List<string>();
         }
         
         public bool CheckCommonPasswords(IArchiveStrategy strategy, string file)
         {
-            foreach (var password in CommonPasswords.Where(password => strategy.IsPasswordCorrect(file, password)))
+            foreach (var password in _commonPasswords.Where(password => strategy.IsPasswordCorrect(file, password)))
             {
                 Log.Information("Found password in common passwords for file: {File}", file);
                 AddPasswordAndSave(file, password);
@@ -44,9 +48,9 @@ namespace ArchiveCracker.Services
                 AddPasswordAndSave(file, line);
 
                 // Check if it's already in common passwords
-                if (!CommonPasswords.Contains(line))
+                if (!_commonPasswords.Contains(line))
                 {
-                    CommonPasswords.Add(line);
+                    _commonPasswords.Add(line);
                     _fileService.AppendToCommonPasswordsFile(line);
                 }
 
@@ -56,9 +60,9 @@ namespace ArchiveCracker.Services
 
         private void AddPasswordAndSave(string file, string password)
         {
-            FoundPasswords.Add(new ArchivePasswordPair { File = file, Password = password });
+            _foundPasswords.Add(new ArchivePasswordPair { File = file, Password = password });
             Log.Information("Password {Password} for archive {File} was added to FoundPasswords.", password, file);
-            _fileService.SaveFoundPasswords(FoundPasswords);
+            _fileService.SaveFoundPasswords(_foundPasswords);
         }
     }
 }

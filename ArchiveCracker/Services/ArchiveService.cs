@@ -9,6 +9,7 @@ namespace ArchiveCracker.Services
     {
         private readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> _protectedArchives;
         private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
+
         private readonly Dictionary<string, IArchiveStrategy> _archiveStrategies = new()
         {
             { ".rar", new RarArchiveStrategy() },
@@ -17,7 +18,8 @@ namespace ArchiveCracker.Services
             { ".001", new SevenZipArchiveStrategy() } // Checking password protection on first volume
         };
 
-        public ArchiveService(ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives, ConcurrentBag<ArchivePasswordPair> foundPasswords)
+        public ArchiveService(ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives,
+            ConcurrentBag<ArchivePasswordPair> foundPasswords)
         {
             _protectedArchives = protectedArchives;
             _foundPasswords = foundPasswords;
@@ -25,28 +27,36 @@ namespace ArchiveCracker.Services
 
         public void LoadArchives(string pathToZipFiles)
         {
-            var files = Directory.GetFiles(pathToZipFiles, "*.*", SearchOption.AllDirectories);
-
-            Log.Information("Found {FileCount} files. Checking for protected archives...", files.Length);
-
-            Parallel.ForEach(files, file =>
+            try
             {
-                var ext = Path.GetExtension(file).ToLower();
+                var files = Directory.GetFiles(pathToZipFiles, "*.*", SearchOption.AllDirectories);
 
-                if (!_archiveStrategies.TryGetValue(ext, out var strategy) ||
-                    !strategy.IsPasswordProtected(file) ||
-                    _foundPasswords.Any(fp => fp.File == file)) return;
+                Log.Information("Found {FileCount} files. Checking for protected archives...", files.Length);
 
-                if (!_protectedArchives.ContainsKey(strategy))
+                Parallel.ForEach(files, file =>
                 {
-                    _protectedArchives[strategy] = new ConcurrentBag<string>();
-                }
+                    var ext = Path.GetExtension(file).ToLower();
 
-                _protectedArchives[strategy].Add(file);
-                Log.Information("Password protected archive found: {File}", file);
-            });
+                    if (!_archiveStrategies.TryGetValue(ext, out var strategy) ||
+                        !strategy.IsPasswordProtected(file) ||
+                        _foundPasswords.Any(fp => fp.File == file)) return;
 
-            Log.Information("Found {ArchiveCount} protected archives.", _protectedArchives.Values.Sum(bag => bag.Count));
+                    if (!_protectedArchives.ContainsKey(strategy))
+                    {
+                        _protectedArchives[strategy] = new ConcurrentBag<string>();
+                    }
+
+                    _protectedArchives[strategy].Add(file);
+                    Log.Information("Password protected archive found: {File}", file);
+                });
+
+                Log.Information("Found {ArchiveCount} protected archives.",
+                    _protectedArchives.Values.Sum(bag => bag.Count));
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "An error occurred while loading archives");
+            }
         }
 
         public void CheckPasswords(PasswordService passwordService)

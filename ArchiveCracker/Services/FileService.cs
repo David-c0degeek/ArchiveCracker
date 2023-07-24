@@ -36,11 +36,11 @@ namespace ArchiveCracker.Services
             });
         }
 
-        public void FileOperationsWorker()
+        public void FileOperationsWorker(CancellationToken cancellationToken)
         {
             try
             {
-                foreach (var operation in FileOperationsQueue.GetConsumingEnumerable())
+                foreach (var operation in FileOperationsQueue.GetConsumingEnumerable(cancellationToken))
                 {
                     switch (operation.Type)
                     {
