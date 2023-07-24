@@ -25,7 +25,7 @@ public class ArchiveService
         _foundPasswords = foundPasswords;
     }
 
-    public void LoadArchives(string pathToZipFiles)
+    public async Task LoadArchivesAsync(string pathToZipFiles)
     {
         try
         {
@@ -33,13 +33,13 @@ public class ArchiveService
 
             Log.Information("Found {FileCount} files. Checking for protected archives...", files.Length);
 
-            Parallel.ForEach(files, file =>
+            var tasks = files.Select(file =>
             {
                 var ext = Path.GetExtension(file).ToLower();
 
                 if (!_archiveStrategies.TryGetValue(ext, out var strategy) ||
                     !strategy.IsPasswordProtected(file) ||
-                    _foundPasswords.Any(fp => fp.File == file)) return;
+                    _foundPasswords.Any(fp => fp.File == file)) return Task.CompletedTask;
 
                 if (!_protectedArchives.ContainsKey(strategy))
                 {
@@ -48,7 +48,10 @@ public class ArchiveService
 
                 _protectedArchives[strategy].Add(file);
                 Log.Information("Password protected archive found: {File}", file);
+                return Task.CompletedTask;
             });
+
+            await Task.WhenAll(tasks);
 
             Log.Information("Found {ArchiveCount} protected archives.",
                 _protectedArchives.Values.Sum(bag => bag.Count));
@@ -58,22 +61,24 @@ public class ArchiveService
             Log.Error(ex, "An error occurred while loading archives");
         }
     }
-
-    public void CheckPasswords(PasswordService passwordService)
+    
+    public async Task CheckPasswordsAsync(PasswordService passwordService)
     {
-        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
-
         foreach (var (strategy, archives) in _protectedArchives)
         {
-            Parallel.ForEach(archives, parallelOptions, file =>
+            var tasks = archives.Select(file =>
             {
                 Log.Information("Checking passwords for file: {File}", file);
 
-                if (!passwordService.CheckCommonPasswords(strategy, file))
-                {
-                    passwordService.CheckUserPasswords(strategy, file);
-                }
+                if (passwordService.CheckCommonPasswords(strategy, file)) return Task.CompletedTask;
+            
+                Log.Information("No common password found, trying user passwords...");
+                passwordService.CheckUserPasswords(strategy, file);
+                return Task.CompletedTask;
             });
+
+            await Task.WhenAll(tasks);
         }
     }
+
 }

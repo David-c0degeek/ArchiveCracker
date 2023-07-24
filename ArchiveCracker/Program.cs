@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Text;
+using ArchiveCracker.Extensions;
 using ArchiveCracker.Models;
 using ArchiveCracker.Services;
 using ArchiveCracker.Strategies;
@@ -16,7 +17,7 @@ public abstract class Program
     private static readonly ConcurrentBag<ArchivePasswordPair> FoundPasswords = new();
     private static readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> ProtectedArchives = new();
     private static readonly CancellationTokenSource CancellationTokenSource = new();
-    
+
     private const string CommonPasswordsFileName = "common_passwords.txt";
     private const string UserPasswordsFileName = "user_passwords.txt";
     private const string FoundPasswordsFileName = "found_passwords.txt";
@@ -29,17 +30,17 @@ public abstract class Program
     private static string? _commonPasswordsPath;
     private static string? _foundPasswordsPath;
 
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         InitLogger();
 
-        Parser.Default.ParseArguments<Options>(args)
-            .WithParsed(SetupPaths)
-            .WithParsed(CreateServices)
-            .WithParsed(StartOperations)
-            .WithNotParsed(errors => 
+        await Parser.Default.ParseArguments<Options>(args)
+            .WithParsedAsync(SetupPaths)
+            .WithParsedAsync(CreateServices)
+            .WithParsedAsync(StartOperations)
+            .WithNotParsedAsync(errors =>
             {
-                foreach(var error in errors)
+                foreach (var error in errors)
                 {
                     Log.Error(error.ToString() ?? "Unknown error");
                 }
@@ -47,59 +48,63 @@ public abstract class Program
 
         Cleanup();
     }
-
-private static void SetupPaths(Options options)
-{
-    _zipPath = string.IsNullOrWhiteSpace(options.PathToZipFiles)
-        ? Environment.CurrentDirectory
-        : options.PathToZipFiles;
-
-    _userPasswordsPath = string.IsNullOrWhiteSpace(options.UserPasswordsFilePath)
-        ? Path.Combine(Environment.CurrentDirectory, UserPasswordsFileName)
-        : options.UserPasswordsFilePath;
     
-    _commonPasswordsPath = string.IsNullOrWhiteSpace(options.CommonPasswordsFilePath)
-        ? Path.Combine(Environment.CurrentDirectory, CommonPasswordsFileName)
-        : options.CommonPasswordsFilePath;
-    
-    _foundPasswordsPath = string.IsNullOrWhiteSpace(options.FoundPasswordsFilePath)
-        ? Path.Combine(Environment.CurrentDirectory, FoundPasswordsFileName)
-        : options.FoundPasswordsFilePath;
+    private static Task SetupPaths(Options options)
+    {
+        _zipPath = string.IsNullOrWhiteSpace(options.PathToZipFiles)
+            ? Environment.CurrentDirectory
+            : options.PathToZipFiles;
 
-    var errorMessage = new StringBuilder();
-    
-    if (_zipPath == null) errorMessage.AppendLine("Failed to determine the zip path");
-    if (_userPasswordsPath == null) errorMessage.AppendLine("Failed to determine the user passwords path");
-    if (_commonPasswordsPath == null) errorMessage.AppendLine("Failed to determine the common passwords path");
-    if (_foundPasswordsPath == null) errorMessage.AppendLine("Failed to determine the found passwords path");
+        _userPasswordsPath = string.IsNullOrWhiteSpace(options.UserPasswordsFilePath)
+            ? Path.Combine(Environment.CurrentDirectory, UserPasswordsFileName)
+            : options.UserPasswordsFilePath;
 
-    if (errorMessage.Length > 0) throw new Exception(errorMessage.ToString());
-}
+        _commonPasswordsPath = string.IsNullOrWhiteSpace(options.CommonPasswordsFilePath)
+            ? Path.Combine(Environment.CurrentDirectory, CommonPasswordsFileName)
+            : options.CommonPasswordsFilePath;
 
-private static void CreateServices(Options options)
-{
-    _fileService = new FileService(
-        _commonPasswordsPath!,
-        _userPasswordsPath!,
-        _foundPasswordsPath!,
-        FileOperationsQueue);
-    
-    _passwordService = new PasswordService(
-        FoundPasswords,
-        _userPasswordsPath!,
-        _fileService,
-        _commonPasswordsPath!);
-    
-    _archiveService = new ArchiveService(
-        ProtectedArchives, 
-        FoundPasswords);
-}
+        _foundPasswordsPath = string.IsNullOrWhiteSpace(options.FoundPasswordsFilePath)
+            ? Path.Combine(Environment.CurrentDirectory, FoundPasswordsFileName)
+            : options.FoundPasswordsFilePath;
+
+        var errorMessage = new StringBuilder();
+
+        if (_zipPath == null) errorMessage.AppendLine("Failed to determine the zip path");
+        if (_userPasswordsPath == null) errorMessage.AppendLine("Failed to determine the user passwords path");
+        if (_commonPasswordsPath == null) errorMessage.AppendLine("Failed to determine the common passwords path");
+        if (_foundPasswordsPath == null) errorMessage.AppendLine("Failed to determine the found passwords path");
+
+        if (errorMessage.Length > 0) throw new Exception(errorMessage.ToString());
+
+        return Task.CompletedTask;
+    }
+
+    private static Task CreateServices(Options options)
+    {
+        _fileService = new FileService(
+            _commonPasswordsPath!,
+            _userPasswordsPath!,
+            _foundPasswordsPath!,
+            FileOperationsQueue);
+
+        _passwordService = new PasswordService(
+            FoundPasswords,
+            _userPasswordsPath!,
+            _fileService,
+            _commonPasswordsPath!);
+
+        _archiveService = new ArchiveService(
+            ProtectedArchives,
+            FoundPasswords);
+
+        return Task.CompletedTask;
+    }
 
 
-    private static void StartOperations(Options options)
+    private static async Task StartOperations(Options options)
     {
         // Start the File Operations worker
-        Task.Factory.StartNew(() =>
+        await Task.Factory.StartNew(() =>
         {
             try
             {
@@ -112,10 +117,10 @@ private static void CreateServices(Options options)
         }, TaskCreationOptions.LongRunning);
 
         // Load archives
-        _archiveService!.LoadArchives(_zipPath!);
+        await _archiveService!.LoadArchivesAsync(_zipPath!);
 
         // Check Passwords
-        _archiveService.CheckPasswords(_passwordService!);
+        await _archiveService.CheckPasswordsAsync(_passwordService!);
     }
 
     private static void Cleanup()
@@ -127,7 +132,7 @@ private static void CreateServices(Options options)
     private static void InitLogger()
     {
         Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
+            .MinimumLevel.Information()
             .WriteTo.Console()
             .CreateLogger();
     }
