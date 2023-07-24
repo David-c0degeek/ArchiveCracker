@@ -60,8 +60,9 @@ public class PasswordService
 
     private void AddPasswordAndSave(string file, string password)
     {
-        _foundPasswords.Add(new ArchivePasswordPair { File = file, Password = password });
+        var archivePasswordPair = new ArchivePasswordPair { File = file, Password = password };
+        _foundPasswords.Add(archivePasswordPair);
         Log.Information("Password {Password} for archive {File} was added to FoundPasswords.", password, file);
-        _fileService.SaveFoundPasswords(_foundPasswords);
+        _fileService.SaveFoundPasswords(archivePasswordPair);
     }
 }

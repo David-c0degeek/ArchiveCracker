@@ -27,12 +27,12 @@ public class FileService
         });
     }
 
-    public void SaveFoundPasswords(ConcurrentBag<ArchivePasswordPair> foundPasswords)
+    public void SaveFoundPasswords(ArchivePasswordPair foundPassword)
     {
         FileOperationsQueue.Add(new FileOperation
         {
             Type = FileOperation.OperationType.SaveFoundPasswords,
-            Data = JsonConvert.SerializeObject(foundPasswords)
+            Data = JsonConvert.SerializeObject(foundPassword)
         });
     }
 
@@ -48,7 +48,7 @@ public class FileService
                         File.AppendAllText(_commonPasswordsFilePath, operation.Data + Environment.NewLine);
                         break;
                     case FileOperation.OperationType.SaveFoundPasswords:
-                        File.WriteAllText(_foundPasswordsFilePath, operation.Data);
+                        File.AppendAllText(_foundPasswordsFilePath, operation.Data + Environment.NewLine);
                         break;
                     default:
                         Log.Error($"operation type: {operation.Type} not supported.");
@@ -61,4 +61,5 @@ public class FileService
             Log.Error(ex, "An I/O error occurred in FileOperationsWorker: {Message}", ex.Message);
         }
     }
+
 }
