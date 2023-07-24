@@ -27,12 +27,13 @@ public class FileService
         });
     }
 
-    public void SaveFoundPasswords(ArchivePasswordPair foundPassword)
+    public void SaveFoundPassword(ArchivePasswordPair foundPassword)
     {
+        var formattedPassword = $"File: {foundPassword.File} <<||||>> Password: {foundPassword.Password}{Environment.NewLine}";
         FileOperationsQueue.Add(new FileOperation
         {
             Type = FileOperation.OperationType.SaveFoundPasswords,
-            Data = JsonConvert.SerializeObject(foundPassword)
+            Data = formattedPassword
         });
     }
 
@@ -48,7 +49,7 @@ public class FileService
                         File.AppendAllText(_commonPasswordsFilePath, operation.Data + Environment.NewLine);
                         break;
                     case FileOperation.OperationType.SaveFoundPasswords:
-                        File.AppendAllText(_foundPasswordsFilePath, operation.Data + Environment.NewLine);
+                        File.AppendAllText(_foundPasswordsFilePath, operation.Data);
                         break;
                     default:
                         Log.Error($"operation type: {operation.Type} not supported.");
