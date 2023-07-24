@@ -2,7 +2,8 @@
 
 namespace ArchiveCracker.Models;
 
-public abstract class Options
+// ReSharper disable once ClassNeverInstantiated.Global
+public class Options
 {
     [Option('z', "zipPath", Required = false, HelpText = "Path to the directory containing zip files.")]
     public string PathToZipFiles { get; set; } = string.Empty;
