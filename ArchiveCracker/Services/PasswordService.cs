@@ -62,7 +62,7 @@ public class PasswordService
     {
         var archivePasswordPair = new ArchivePasswordPair { File = file, Password = password };
         _foundPasswords.Add(archivePasswordPair);
-        Log.Information("Password {Password} for archive {File} was added to FoundPasswords.", password, file);
+        Log.Information("Password {Password} for archive {File} was added to FoundPasswords", password, file);
         _fileService.SaveFoundPassword(archivePasswordPair);
     }
 }

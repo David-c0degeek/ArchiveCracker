@@ -53,7 +53,7 @@ public class ArchiveService
 
             await Task.WhenAll(tasks);
 
-            Log.Information("Found {ArchiveCount} protected archives.",
+            Log.Information("Found {ArchiveCount} protected archives",
                 _protectedArchives.Values.Sum(bag => bag.Count));
         }
         catch (Exception ex)

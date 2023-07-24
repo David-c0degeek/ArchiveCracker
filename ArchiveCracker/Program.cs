@@ -39,7 +39,7 @@ public abstract class Program
         {
             foreach (var error in errors)
             {
-                Log.Error(error.ToString() ?? "Unknown error");
+                Log.Error("An error occurred: {ErrorMessage}", error.ToString() ?? "Unknown error");
             }
 
             Environment.Exit(1);

@@ -67,7 +67,7 @@ public class FileService
                         File.AppendAllText(_foundPasswordsFilePath, operation.Data);
                         break;
                     default:
-                        Log.Error($"operation type: {operation.Type} not supported.");
+                        Log.Error("operation type: {OperationType} not supported", operation.Type);
                         throw new ArgumentOutOfRangeException($"operation type: {operation.Type} not supported.");
                 }
             }
