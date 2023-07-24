@@ -2,6 +2,6 @@
 
 public class ArchivePasswordPair
 {
-    public required string File { get; set; }
-    public required string Password { get; set; }
+    public required string File { get; init; }
+    public required string Password { get; init; }
 }

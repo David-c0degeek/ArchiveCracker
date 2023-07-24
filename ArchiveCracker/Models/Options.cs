@@ -1,4 +1,5 @@
 ﻿using CommandLine;
+// ReSharper disable AutoPropertyCanBeMadeGetOnly.Global
 
 namespace ArchiveCracker.Models;
 
