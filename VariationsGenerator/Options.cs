@@ -11,5 +11,5 @@ public class Options
 
     [Option('o', "output", Required = false, Default = "output.txt", HelpText = "Output file to write the password variations.")]
     // ReSharper disable once AutoPropertyCanBeMadeGetOnly.Global
-    public string OutputFile { get; set; } = null!;
+    public string? OutputFile { get; set; }
 }

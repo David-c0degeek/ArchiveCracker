@@ -60,6 +60,9 @@ public static class Program
         var variations = new ConcurrentQueue<string>();
         var cancellationTokenSource = new CancellationTokenSource();
 
+        // Set default output file if not provided
+        options.OutputFile ??= "output.txt";
+        
         Log.Information("Starting to write variations to output file: {OptionsOutputFile}", options.OutputFile);
         var writeTask = WriteVariationsToFile(variations, options.OutputFile, cancellationTokenSource.Token);
 
@@ -164,6 +167,11 @@ public static class Program
     {
         Log.Information("Starting to write variations to file: {Filename}", filename);
 
+        if (!File.Exists(filename))
+        {
+            File.Create(filename);
+        }
+        
         await using var writer = new StreamWriter(filename);
 
         while (true)
