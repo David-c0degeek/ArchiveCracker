@@ -6,10 +6,12 @@ public static class PasswordVariations
 {
     private static readonly ConcurrentDictionary<(List<string>, int), IEnumerable<string>> Cache = new();
 
-    public static IEnumerable<string> CombineWords(List<string> words, int maxLength)
+    public static IEnumerable<string> CombineWords(IEnumerable<string> lines, int maxLength)
     {
         // Convert list to HashSet to remove duplicates
-        words = new HashSet<string>(words).ToList();
+        var words = new HashSet<string>(lines
+                .SelectMany(line => line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)))
+            .ToList();
 
         if (Cache.TryGetValue((words, maxLength), out var cachedResult))
         {
