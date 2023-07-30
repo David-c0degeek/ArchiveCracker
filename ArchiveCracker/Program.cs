@@ -8,7 +8,7 @@ using Serilog;
 
 namespace ArchiveCracker;
 
-public abstract class Program
+public static class Program
 {
     private static readonly BlockingCollection<FileOperation> FileOperationsQueue =
         new(new ConcurrentQueue<FileOperation>());
@@ -33,25 +33,32 @@ public abstract class Program
     {
         InitLogger();
 
-        var result = Parser.Default.ParseArguments<Options>(args);
-
-        result.WithNotParsed(errors =>
+        try
         {
-            foreach (var error in errors)
+            var result = Parser.Default.ParseArguments<Options>(args);
+
+            result.WithNotParsed(errors =>
             {
-                Log.Error("An error occurred: {ErrorMessage}", error.ToString() ?? "Unknown error");
-            }
+                foreach (var error in errors)
+                {
+                    Log.Error("An error occurred: {ErrorMessage}", error.ToString() ?? "Unknown error");
+                }
 
-            Environment.Exit(1);
-        });
+                Environment.Exit(1);
+            });
 
-        var options = ((Parsed<Options>)result).Value;
+            var options = ((Parsed<Options>)result).Value;
 
-        await SetupPaths(options);
-        await CreateServices();
-        await StartOperations();
+            await SetupPaths(options);
+            CreateServices();
+            await StartOperations();
 
-        Cleanup();
+            Cleanup();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "An error occurred in the Main method");
+        }
     }
 
     private static Task SetupPaths(Options options)
@@ -84,7 +91,7 @@ public abstract class Program
         return Task.CompletedTask;
     }
 
-    private static Task CreateServices()
+    private static void CreateServices()
     {
         _fileService = new FileService(
             _commonPasswordsPath!,
@@ -101,10 +108,7 @@ public abstract class Program
         _archiveService = new ArchiveService(
             ProtectedArchives,
             FoundPasswords);
-
-        return Task.CompletedTask;
     }
-
 
     private static async Task StartOperations()
     {

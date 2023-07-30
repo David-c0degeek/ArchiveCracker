@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using ArchiveCracker.Models;
 using Serilog;
 
@@ -9,7 +10,6 @@ public class FileService
     private readonly string _commonPasswordsFilePath;
     private readonly string _foundPasswordsFilePath;
     private BlockingCollection<FileOperation> FileOperationsQueue { get; }
-    
 
     public FileService(string commonPasswordsPath, string userPasswordsPath, string foundPasswordsPath, BlockingCollection<FileOperation> fileOperationsQueue)
     {
@@ -32,7 +32,7 @@ public class FileService
             File.Create(foundPasswordsPath).Dispose();
         }
     }
-        
+
     public void AppendToCommonPasswordsFile(string password)
     {
         FileOperationsQueue.Add(new FileOperation
@@ -54,10 +54,14 @@ public class FileService
 
     public void FileOperationsWorker(CancellationToken cancellationToken)
     {
+        var stopwatch = new Stopwatch();
+        
         try
         {
             foreach (var operation in FileOperationsQueue.GetConsumingEnumerable(cancellationToken))
             {
+                stopwatch.Restart();
+
                 switch (operation.Type)
                 {
                     case FileOperation.OperationType.AppendCommonPassword:
@@ -70,6 +74,9 @@ public class FileService
                         Log.Error("operation type: {OperationType} not supported", operation.Type);
                         throw new ArgumentOutOfRangeException($"operation type: {operation.Type} not supported.");
                 }
+
+                stopwatch.Stop();
+                Log.Information("File operation {OperationType} took {ElapsedMilliseconds} ms", operation.Type, stopwatch.ElapsedMilliseconds);
             }
         }
         catch (IOException ex)
@@ -77,5 +84,4 @@ public class FileService
             Log.Error(ex, "An I/O error occurred in FileOperationsWorker: {Message}", ex.Message);
         }
     }
-
 }

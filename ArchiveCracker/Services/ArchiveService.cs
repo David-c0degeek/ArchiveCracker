@@ -1,84 +1,93 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using ArchiveCracker.Models;
 using ArchiveCracker.Strategies;
 using Serilog;
 
-namespace ArchiveCracker.Services;
-
-public class ArchiveService
+namespace ArchiveCracker.Services
 {
-    private readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> _protectedArchives;
-    private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
-
-    private readonly Dictionary<string, IArchiveStrategy> _archiveStrategies = new()
+    public class ArchiveService
     {
-        { ".rar", new RarArchiveStrategy() },
-        { ".7z", new SevenZipArchiveStrategy() },
-        { ".zip", new ZipArchiveStrategy() },
-        { ".001", new SevenZipArchiveStrategy() } // Checking password protection on first volume
-    };
+        private readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> _protectedArchives;
+        private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
 
-    public ArchiveService(ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives,
-        ConcurrentBag<ArchivePasswordPair> foundPasswords)
-    {
-        _protectedArchives = protectedArchives;
-        _foundPasswords = foundPasswords;
-    }
-
-    public async Task LoadArchivesAsync(string pathToZipFiles)
-    {
-        try
+        private readonly Dictionary<string, IArchiveStrategy> _archiveStrategies = new()
         {
-            var files = Directory.GetFiles(pathToZipFiles, "*.*", SearchOption.AllDirectories);
+            { ".rar", new RarArchiveStrategy() },
+            { ".7z", new SevenZipArchiveStrategy() },
+            { ".zip", new ZipArchiveStrategy() },
+            { ".001", new SevenZipArchiveStrategy() } // Checking password protection on first volume
+        };
 
-            Log.Information("Found {FileCount} files. Checking for protected archives...", files.Length);
+        public ArchiveService(ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives,
+            ConcurrentBag<ArchivePasswordPair> foundPasswords)
+        {
+            _protectedArchives = protectedArchives;
+            _foundPasswords = foundPasswords;
+        }
 
-            var tasks = files.Select(file =>
+        public async Task LoadArchivesAsync(string pathToZipFiles)
+        {
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            try
             {
-                var ext = Path.GetExtension(file).ToLower();
+                var files = Directory.GetFiles(pathToZipFiles, "*.*", SearchOption.AllDirectories);
 
-                if (!_archiveStrategies.TryGetValue(ext, out var strategy) ||
-                    !strategy.IsPasswordProtected(file) ||
-                    _foundPasswords.Any(fp => fp.File == file)) return Task.CompletedTask;
+                Log.Information("Found {FileCount} files. Checking for protected archives...", files.Length);
 
-                if (!_protectedArchives.ContainsKey(strategy))
+                await Task.WhenAll(files.Select(LoadArchiveAsync));
+
+                Log.Information("Found {ArchiveCount} protected archives",
+                    _protectedArchives.Values.Sum(bag => bag.Count));
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "An error occurred while loading archives");
+            }
+
+            stopwatch.Stop();
+            Log.Information("Loading archives took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+        }
+
+        private async Task LoadArchiveAsync(string file)
+        {
+            var ext = Path.GetExtension(file).ToLower();
+
+            if (!_archiveStrategies.TryGetValue(ext, out var strategy) ||
+                !await Task.Run(() => strategy.IsPasswordProtected(file)) ||
+                _foundPasswords.Any(fp => fp.File == file)) return;
+
+            if (!_protectedArchives.ContainsKey(strategy))
+            {
+                _protectedArchives[strategy] = new ConcurrentBag<string>();
+            }
+
+            _protectedArchives[strategy].Add(file);
+            Log.Information("Password protected archive found: {File}", file);
+        }
+
+        public async Task CheckPasswordsAsync(PasswordService passwordService)
+        {
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            foreach (var (strategy, archives) in _protectedArchives)
+            {
+                await Task.WhenAll(archives.Select(async file =>
                 {
-                    _protectedArchives[strategy] = new ConcurrentBag<string>();
-                }
+                    Log.Information("Checking passwords for file: {File}", file);
 
-                _protectedArchives[strategy].Add(file);
-                Log.Information("Password protected archive found: {File}", file);
-                return Task.CompletedTask;
-            });
+                    if (passwordService.CheckCommonPasswords(strategy, file)) return;
+                
+                    Log.Information("No common password found, trying user passwords...");
+                    passwordService.CheckUserPasswords(strategy, file);
+                }));
+            }
 
-            await Task.WhenAll(tasks);
-
-            Log.Information("Found {ArchiveCount} protected archives",
-                _protectedArchives.Values.Sum(bag => bag.Count));
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "An error occurred while loading archives");
+            stopwatch.Stop();
+            Log.Information("Checking passwords took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
         }
     }
-    
-    public async Task CheckPasswordsAsync(PasswordService passwordService)
-    {
-        foreach (var (strategy, archives) in _protectedArchives)
-        {
-            var tasks = archives.Select(file =>
-            {
-                Log.Information("Checking passwords for file: {File}", file);
-
-                if (passwordService.CheckCommonPasswords(strategy, file)) return Task.CompletedTask;
-            
-                Log.Information("No common password found, trying user passwords...");
-                passwordService.CheckUserPasswords(strategy, file);
-                return Task.CompletedTask;
-            });
-
-            await Task.WhenAll(tasks);
-        }
-    }
-
 }
