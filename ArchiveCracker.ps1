@@ -48,7 +48,7 @@ Write-Host "Running Hashcat on the hash..."
 
 if ([string]::IsNullOrEmpty($mask)) {
     # If no mask was provided, use a default one
-    $mask = "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a"
+    $mask = "?a" * 50
 }
 
 $sessionName = $filename
