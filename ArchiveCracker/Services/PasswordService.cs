@@ -33,7 +33,9 @@ namespace ArchiveCracker.Services
             var processorCount = Environment.ProcessorCount;
             _maxDegreeOfParallelism =
                 processorCount <= 3 ? 1 : processorCount <= 20 ? processorCount - 2 : processorCount - 4;
-
+            
+            Log.Information("Total threads in machine: {ProcessorCount}, _maxDegreeOfParallelism: {MaxDegreeOfParallelism}", processorCount, _maxDegreeOfParallelism);
+            
             _totalPasswords = _commonPasswords.Count + _userPasswords.Count;
         }
 
