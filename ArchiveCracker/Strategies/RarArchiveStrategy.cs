@@ -11,13 +11,14 @@ internal class RarArchiveStrategy : IArchiveStrategy
         try
         {
             using var archive = ArchiveFactory.Open(file);
-            foreach (var entry in archive.Entries)
-            {
-                if (!entry.IsDirectory)
-                {
-                    entry.WriteTo(Stream.Null);
-                }
-            }
+            var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
+
+            // If there are no entries or they are all directories, return false
+            if (firstEntry == null) return false;
+
+            // Try to extract the first non-directory entry
+            firstEntry.WriteTo(Stream.Null);
+
             return false;
         }
         catch (SharpCompress.Common.CryptographicException)
@@ -39,13 +40,14 @@ internal class RarArchiveStrategy : IArchiveStrategy
                 Password = password,
                 LookForHeader = true
             });
-            foreach (var entry in archive.Entries)
-            {
-                if (!entry.IsDirectory)
-                {
-                    entry.WriteTo(Stream.Null);
-                }
-            }
+            var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
+
+            // If there are no entries or they are all directories, return false
+            if (firstEntry == null) return false;
+
+            // Try to extract the first non-directory entry
+            firstEntry.WriteTo(Stream.Null);
+
             return true;
         }
         catch (SharpCompress.Common.CryptographicException)
