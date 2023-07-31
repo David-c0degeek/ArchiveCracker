@@ -4,8 +4,25 @@ param (
     [Parameter(Mandatory=$false)][switch]$restore
 )
 
+# Check if the file is a part of a multi-part archive
+if ($filename.EndsWith(".001")) {
+    # Combine all parts into a single archive
+    Write-Host "Combining multi-part archive..."
+    $parts = Get-ChildItem -Filter "*.7z.*" | Sort-Object Name
+    $combinedFilename = $filename.TrimEnd(".001") + ".7z"
+    foreach ($part in $parts) {
+        $content = [System.IO.File]::ReadAllBytes($part.FullName)
+        $fs = [System.IO.File]::OpenWrite($combinedFilename)
+        $fs.Position = $fs.Length
+        $fs.Write($content, 0, $content.Length)
+        $fs.Close()
+    }
+    $filename = $combinedFilename
+}
+
 # Check for Hashcat
-if (!(Get-Command "hashcat" -ErrorAction SilentlyContinue)) {
+$hashcatPath = ".\hashcat\hashcat-6.2.6\hashcat.exe"
+if (!(Test-Path -Path $hashcatPath)) {
     # Download Hashcat
     Write-Host "Hashcat is not installed. Downloading now..."
     $hashcatUrl = "https://hashcat.net/files/hashcat-6.2.6.7z"
@@ -14,34 +31,24 @@ if (!(Get-Command "hashcat" -ErrorAction SilentlyContinue)) {
 
     # Extract Hashcat
     & 7z x $hashcatFile -o"hashcat"
-
-    # Add Hashcat to the system path
-    $env:Path += ";$(Get-Location)\hashcat"
 }
 
 # Check for 7z2hashcat
-if (!(Get-Command "7z2hashcat" -ErrorAction SilentlyContinue)) {
-    # Download hashcat-utils
-    Write-Host "7z2hashcat is not installed. Downloading now..."
-    $utilsUrl = "https://github.com/hashcat/hashcat-utils/archive/refs/heads/master.zip"
-    $utilsFile = "hashcat-utils.zip"
-    Invoke-WebRequest -Uri $utilsUrl -OutFile $utilsFile
-
-    # Extract hashcat-utils
-    & 7z x $utilsFile -o"hashcat-utils"
-
-    # Build 7z2hashcat
-    Set-Location -Path "hashcat-utils\src"
-    & gcc -o 7z2hashcat 7z2hashcat.c
-
-    # Add 7z2hashcat to the system path
-    $env:Path += ";$(Get-Location)"
-    Set-Location -Path "..\.."
+if (!(Test-Path -Path .\7z2hashcat)) {
+    # Clone 7z2hashcat repository
+    Write-Host "7z2hashcat repository not found. Cloning now..."
+    & git clone https://github.com/philsmd/7z2hashcat.git
+} else {
+    # Update 7z2hashcat repository
+    Write-Host "7z2hashcat repository found. Updating now..."
+    Set-Location -Path .\7z2hashcat
+    & git pull
+    Set-Location -Path ..
 }
 
 # Run 7z2hashcat on the file
 Write-Host "Running 7z2hashcat on the file..."
-$hash = & 7z2hashcat $filename
+$hash = & perl .\7z2hashcat\7z2hashcat.pl $filename
 
 # Run Hashcat on the hash
 Write-Host "Running Hashcat on the hash..."
@@ -55,8 +62,8 @@ $sessionName = $filename
 
 if ($restore) {
     # If the -restore flag was provided, restore the previous session
-    & hashcat --restore --session=$sessionName
+    & $hashcatPath --restore --session=$sessionName
 } else {
     # Otherwise, start a new session
-    & hashcat -m 11600 -a 3 --force -w 4 --status-timer=10 --session=$sessionName $hash $mask
+    & $hashcatPath -m 11600 -a 3 -i -w 4 --status-timer=10 --session=$sessionName $hash $mask
 }
