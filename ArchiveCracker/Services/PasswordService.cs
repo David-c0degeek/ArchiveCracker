@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using ArchiveCracker.Models;
 using ArchiveCracker.Strategies;
 using Serilog;
@@ -14,6 +13,9 @@ namespace ArchiveCracker.Services
         private readonly ReadOnlyCollection<string> _userPasswords;
         private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
         private readonly int _maxDegreeOfParallelism;
+
+        private readonly int _totalPasswords;
+        private int _attemptedPasswords;
 
         public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath,
             FileService fileService, string commonPasswordsFilePath)
@@ -31,6 +33,8 @@ namespace ArchiveCracker.Services
             var processorCount = Environment.ProcessorCount;
             _maxDegreeOfParallelism =
                 processorCount <= 3 ? 1 : processorCount <= 20 ? processorCount - 2 : processorCount - 4;
+
+            _totalPasswords = _commonPasswords.Count + _userPasswords.Count;
         }
 
         private static ReadOnlyCollection<string> LoadPasswords(string filePath)
@@ -52,8 +56,6 @@ namespace ArchiveCracker.Services
         {
             var cancellationTokenSource = new CancellationTokenSource();
             var foundPassword = false;
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
 
             try
             {
@@ -78,6 +80,10 @@ namespace ArchiveCracker.Services
 
                         cancellationTokenSource.Cancel();
                         state.Stop();
+
+                        Interlocked.Increment(ref _attemptedPasswords);
+                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
+                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
                     });
             }
             catch (OperationCanceledException)
@@ -85,17 +91,12 @@ namespace ArchiveCracker.Services
                 Log.Information("Operation was canceled because a password was found");
             }
 
-            stopwatch.Stop();
-            Log.Information("Checking common passwords took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
-
             return foundPassword;
         }
 
         public void CheckUserPasswords(IArchiveStrategy strategy, string file)
         {
             var cancellationTokenSource = new CancellationTokenSource();
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
 
             try
             {
@@ -125,15 +126,16 @@ namespace ArchiveCracker.Services
 
                         cancellationTokenSource.Cancel();
                         state.Stop();
+
+                        Interlocked.Increment(ref _attemptedPasswords);
+                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
+                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
                     });
             }
             catch (OperationCanceledException)
             {
                 Log.Information("Operation was canceled because a password was found");
             }
-
-            stopwatch.Stop();
-            Log.Information("Checking user passwords took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
         }
 
         private void AddPasswordAndSave(string file, string password)
