@@ -72,6 +72,10 @@ namespace ArchiveCracker.Services
                             return;
                         }
 
+                        Interlocked.Increment(ref _attemptedPasswords);
+                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
+                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
+
                         if (!strategy.IsPasswordCorrect(file, password)) return;
 
                         Log.Information("Found password in common passwords for file: {File}", file);
@@ -80,10 +84,6 @@ namespace ArchiveCracker.Services
 
                         cancellationTokenSource.Cancel();
                         state.Stop();
-
-                        Interlocked.Increment(ref _attemptedPasswords);
-                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
-                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
                     });
             }
             catch (OperationCanceledException)
@@ -113,6 +113,10 @@ namespace ArchiveCracker.Services
                             return;
                         }
 
+                        Interlocked.Increment(ref _attemptedPasswords);
+                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
+                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
+
                         if (!strategy.IsPasswordCorrect(file, password)) return;
 
                         Log.Information("Found password in user passwords for file: {File}", file);
@@ -126,10 +130,6 @@ namespace ArchiveCracker.Services
 
                         cancellationTokenSource.Cancel();
                         state.Stop();
-
-                        Interlocked.Increment(ref _attemptedPasswords);
-                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
-                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
                     });
             }
             catch (OperationCanceledException)
@@ -137,6 +137,7 @@ namespace ArchiveCracker.Services
                 Log.Information("Operation was canceled because a password was found");
             }
         }
+
 
         private void AddPasswordAndSave(string file, string password)
         {
