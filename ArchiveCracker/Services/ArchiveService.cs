@@ -8,7 +8,7 @@ namespace ArchiveCracker.Services
 {
     public class ArchiveService
     {
-        private readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> _protectedArchives;
+        private readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> _protectedArchives = new();
         private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
 
         private readonly Dictionary<string, IArchiveStrategy> _archiveStrategies = new()
@@ -19,14 +19,12 @@ namespace ArchiveCracker.Services
             { ".001", new SevenZipArchiveStrategy() } // Checking password protection on first volume
         };
 
-        public ArchiveService(ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives,
-            ConcurrentBag<ArchivePasswordPair> foundPasswords)
+        public ArchiveService(ConcurrentBag<ArchivePasswordPair> foundPasswords)
         {
-            _protectedArchives = protectedArchives;
             _foundPasswords = foundPasswords;
         }
 
-        public async Task LoadArchivesAsync(string pathToZipFiles)
+        public async Task<ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>>> LoadArchivesAsync(string pathToZipFiles)
         {
             var stopwatch = new Stopwatch();
             stopwatch.Start();
@@ -49,6 +47,8 @@ namespace ArchiveCracker.Services
 
             stopwatch.Stop();
             Log.Information("Loading archives took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+            
+            return _protectedArchives;
         }
 
         private async Task LoadArchiveAsync(string file)
@@ -66,28 +66,6 @@ namespace ArchiveCracker.Services
 
             _protectedArchives[strategy].Add(file);
             Log.Information("Password protected archive found: {File}", file);
-        }
-
-        public async Task CheckPasswordsAsync(PasswordService passwordService)
-        {
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
-
-            foreach (var (strategy, archives) in _protectedArchives)
-            {
-                await Task.WhenAll(archives.Select(async file =>
-                {
-                    Log.Information("Checking passwords for file: {File}", file);
-
-                    if (passwordService.CheckCommonPasswords(strategy, file)) return;
-                
-                    Log.Information("No common password found, trying user passwords...");
-                    passwordService.CheckUserPasswords(strategy, file);
-                }));
-            }
-
-            stopwatch.Stop();
-            Log.Information("Checking passwords took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
         }
     }
 }

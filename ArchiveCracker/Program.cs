@@ -14,16 +14,16 @@ public static class Program
         new(new ConcurrentQueue<FileOperation>());
 
     private static readonly ConcurrentBag<ArchivePasswordPair> FoundPasswords = new();
-    private static readonly ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> ProtectedArchives = new();
+    private static ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> _protectedArchives = null!;
     private static readonly CancellationTokenSource CancellationTokenSource = new();
 
     private const string CommonPasswordsFileName = "common_passwords.txt";
     private const string UserPasswordsFileName = "user_passwords.txt";
     private const string FoundPasswordsFileName = "found_passwords.txt";
 
-    private static FileService? _fileService;
-    private static PasswordService? _passwordService;
-    private static ArchiveService? _archiveService;
+    private static FileService _fileService = null!;
+    private static PasswordService _passwordService = null!;
+    private static ArchiveService _archiveService = null!;
     private static string? _zipPath;
     private static string? _userPasswordsPath;
     private static string? _commonPasswordsPath;
@@ -103,10 +103,10 @@ public static class Program
             FoundPasswords,
             _userPasswordsPath!,
             _fileService,
-            _commonPasswordsPath!);
+            _commonPasswordsPath!,
+            GetMaxDegreeOfParallelism());
 
         _archiveService = new ArchiveService(
-            ProtectedArchives,
             FoundPasswords);
     }
 
@@ -119,7 +119,7 @@ public static class Program
         {
             try
             {
-                _fileService!.FileOperationsWorker(CancellationTokenSource.Token);
+                _fileService.FileOperationsWorker(CancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
@@ -128,10 +128,10 @@ public static class Program
         }, TaskCreationOptions.LongRunning);
 
         // Load archives
-        await _archiveService!.LoadArchivesAsync(_zipPath!);
+        _protectedArchives = await _archiveService.LoadArchivesAsync(_zipPath!);
 
         // Check Passwords
-        await _archiveService.CheckPasswordsAsync(_passwordService!);
+        await _passwordService.CheckPasswordsAsync(_protectedArchives);
     }
 
     private static void Cleanup()
@@ -146,5 +146,15 @@ public static class Program
             .MinimumLevel.Information()
             .WriteTo.Console()
             .CreateLogger();
+    }
+    
+    private static int GetMaxDegreeOfParallelism()
+    {
+        var processorCount = Environment.ProcessorCount;
+        var maxDegreeOfParallelism =processorCount <= 3 ? 1 : processorCount <= 20 ? processorCount - 2 : processorCount - 4;
+        
+        Log.Information("Total threads in machine: {ProcessorCount}, _maxDegreeOfParallelism: {MaxDegreeOfParallelism}", processorCount, maxDegreeOfParallelism);
+        
+        return maxDegreeOfParallelism;
     }
 }

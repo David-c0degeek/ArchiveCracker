@@ -1,152 +1,141 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using ArchiveCracker.Models;
 using ArchiveCracker.Strategies;
 using Serilog;
 
-namespace ArchiveCracker.Services
+namespace ArchiveCracker.Services;
+
+public class PasswordService
 {
-    public class PasswordService
+    private readonly FileService _fileService;
+    private readonly ReadOnlyCollection<string> _commonPasswords;
+    private readonly ReadOnlyCollection<string> _userPasswords;
+    private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
+
+    private readonly int _totalPasswords;
+    private int _attemptedPasswords;
+    private readonly TaskPool _taskPool;
+
+    public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath,
+        FileService fileService, string commonPasswordsFilePath, int maxDegreeOfParallelism)
     {
-        private readonly FileService _fileService;
-        private readonly ReadOnlyCollection<string> _commonPasswords;
-        private readonly ReadOnlyCollection<string> _userPasswords;
-        private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
-        private readonly int _maxDegreeOfParallelism;
+    
+        _taskPool = new TaskPool(maxDegreeOfParallelism);
+        _foundPasswords = foundPasswords;
+        _fileService = fileService;
 
-        private readonly int _totalPasswords;
-        private int _attemptedPasswords;
+        // Initialize CommonPasswords list
+        _commonPasswords = LoadPasswords(commonPasswordsFilePath);
+        Log.Information("{Count} common passwords loaded", _commonPasswords.Count);
 
-        public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath,
-            FileService fileService, string commonPasswordsFilePath)
+        // Load UserPasswords list into memory
+        _userPasswords = LoadPasswords(userPasswordsFilePath);
+        Log.Information("{Count} user passwords loaded", _userPasswords.Count);
+
+        _totalPasswords = _commonPasswords.Count + _userPasswords.Count;
+        Log.Information("{Count} total passwords loaded", _totalPasswords);
+    }
+
+    private static ReadOnlyCollection<string> LoadPasswords(string filePath)
+    {
+        try
         {
-            _foundPasswords = foundPasswords;
-            _fileService = fileService;
+            if (File.Exists(filePath))
+            {
+                var passwords = File.ReadAllLines(filePath).ToList();
+                Log.Information("{Count} passwords loaded from file {FilePath}", passwords.Count, filePath);
+                return new ReadOnlyCollection<string>(passwords);
+            }
 
-            // Initialize CommonPasswords list
-            _commonPasswords = LoadPasswords(commonPasswordsFilePath);
+            Log.Information("No passwords loaded from file {FilePath} because the file does not exist", filePath);
+            return new ReadOnlyCollection<string>(new List<string>());
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to load passwords from file {FilePath}", filePath);
+            return new ReadOnlyCollection<string>(new List<string>());
+        }
+    }
 
-            // Load UserPasswords list into memory
-            _userPasswords = LoadPasswords(userPasswordsFilePath);
+    private async Task<bool> CheckPasswordsAsync(IArchiveStrategy strategy, string file, IReadOnlyCollection<string> passwords)
+    {
+        var cancellationTokenSource = new CancellationTokenSource();
+        var foundPassword = false;
 
-            // Determine MaxDegreeOfParallelism based on processor count.
-            var processorCount = Environment.ProcessorCount;
-            _maxDegreeOfParallelism =
-                processorCount <= 3 ? 1 : processorCount <= 20 ? processorCount - 2 : processorCount - 4;
+        var tasks = passwords.Select(password => _taskPool.Run(() =>
+        {
+            if (cancellationTokenSource.IsCancellationRequested)
+            {
+                return Task.CompletedTask;
+            }
+
+            Interlocked.Increment(ref _attemptedPasswords);
+            // Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
+            //     _attemptedPasswords, _totalPasswords - _attemptedPasswords);
+
+            Console.Write("\rPasswords attempted: {0}. Remaining: {1}", _attemptedPasswords, _totalPasswords - _attemptedPasswords);
             
-            Log.Information("Total threads in machine: {ProcessorCount}, _maxDegreeOfParallelism: {MaxDegreeOfParallelism}", processorCount, _maxDegreeOfParallelism);
-            
-            _totalPasswords = _commonPasswords.Count + _userPasswords.Count;
-        }
+            if (!strategy.IsPasswordCorrect(file, password)) return Task.CompletedTask;
 
-        private static ReadOnlyCollection<string> LoadPasswords(string filePath)
+            Log.Information("Found password for file: {File}", file);
+            AddPasswordAndSave(file, password);
+
+            if (passwords.Equals(_userPasswords) && !_commonPasswords.Contains(password))
+            {
+                _fileService.AppendToCommonPasswordsFile(password);
+            }
+
+            foundPassword = true;
+            cancellationTokenSource.Cancel();
+            return Task.CompletedTask;
+        }));
+
+        try
         {
-            try
-            {
-                return File.Exists(filePath)
-                    ? new ReadOnlyCollection<string>(File.ReadAllLines(filePath).ToList())
-                    : new ReadOnlyCollection<string>(new List<string>());
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to load passwords from file {FilePath}", filePath);
-                return new ReadOnlyCollection<string>(new List<string>());
-            }
+            await Task.WhenAll(tasks);
         }
-
-        public bool CheckCommonPasswords(IArchiveStrategy strategy, string file)
+        catch (OperationCanceledException)
         {
-            var cancellationTokenSource = new CancellationTokenSource();
-            var foundPassword = false;
-
-            try
-            {
-                Parallel.ForEach(_commonPasswords,
-                    new ParallelOptions
-                    {
-                        CancellationToken = cancellationTokenSource.Token,
-                        MaxDegreeOfParallelism = _maxDegreeOfParallelism
-                    }, (password, state) =>
-                    {
-                        if (cancellationTokenSource.IsCancellationRequested)
-                        {
-                            state.Stop();
-                            return;
-                        }
-
-                        Interlocked.Increment(ref _attemptedPasswords);
-                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
-                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
-
-                        if (!strategy.IsPasswordCorrect(file, password)) return;
-
-                        Log.Information("Found password in common passwords for file: {File}", file);
-                        AddPasswordAndSave(file, password);
-                        foundPassword = true;
-
-                        cancellationTokenSource.Cancel();
-                        state.Stop();
-                    });
-            }
-            catch (OperationCanceledException)
-            {
-                Log.Information("Operation was canceled because a password was found");
-            }
-
-            return foundPassword;
+            Log.Information("Operation was canceled because a password was found");
         }
 
-        public void CheckUserPasswords(IArchiveStrategy strategy, string file)
+        return foundPassword;
+    }
+    
+    private void AddPasswordAndSave(string file, string password)
+    {
+        var archivePasswordPair = new ArchivePasswordPair { File = file, Password = password };
+        _foundPasswords.Add(archivePasswordPair);
+        Log.Information("Password {Password} for archive {File} was added to FoundPasswords", password, file);
+        _fileService.SaveFoundPassword(archivePasswordPair);
+    }
+
+    public async Task CheckPasswordsAsync(
+        ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives)
+    {
+        var stopwatch = new Stopwatch();
+        stopwatch.Start();
+
+        var tasks = new List<Task>();
+
+        foreach (var (strategy, archives) in protectedArchives)
         {
-            var cancellationTokenSource = new CancellationTokenSource();
-
-            try
+            tasks.AddRange(archives.Select(archive => _taskPool.Run(async () =>
             {
-                Parallel.ForEach(_userPasswords,
-                    new ParallelOptions
-                    {
-                        CancellationToken = cancellationTokenSource.Token,
-                        MaxDegreeOfParallelism = _maxDegreeOfParallelism
-                    }, (password, state) =>
-                    {
-                        if (cancellationTokenSource.IsCancellationRequested)
-                        {
-                            state.Stop();
-                            return;
-                        }
+                Log.Information("Checking passwords for file: {File}", archive);
 
-                        Interlocked.Increment(ref _attemptedPasswords);
-                        Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
-                            _attemptedPasswords, _totalPasswords - _attemptedPasswords);
+                if (await CheckPasswordsAsync(strategy, archive, _commonPasswords)) return;
 
-                        if (!strategy.IsPasswordCorrect(file, password)) return;
-
-                        Log.Information("Found password in user passwords for file: {File}", file);
-                        AddPasswordAndSave(file, password);
-
-                        // Check if it's already in common passwords
-                        if (!_commonPasswords.Contains(password))
-                        {
-                            _fileService.AppendToCommonPasswordsFile(password);
-                        }
-
-                        cancellationTokenSource.Cancel();
-                        state.Stop();
-                    });
-            }
-            catch (OperationCanceledException)
-            {
-                Log.Information("Operation was canceled because a password was found");
-            }
+                Log.Information("No common password found, trying user passwords...");
+                await CheckPasswordsAsync(strategy, archive, _userPasswords);
+            })));
         }
 
+        await Task.WhenAll(tasks);
 
-        private void AddPasswordAndSave(string file, string password)
-        {
-            var archivePasswordPair = new ArchivePasswordPair { File = file, Password = password };
-            _foundPasswords.Add(archivePasswordPair);
-            Log.Information("Password {Password} for archive {File} was added to FoundPasswords", password, file);
-            _fileService.SaveFoundPassword(archivePasswordPair);
-        }
+        stopwatch.Stop();
+        Log.Information("Checking passwords took {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
     }
 }
