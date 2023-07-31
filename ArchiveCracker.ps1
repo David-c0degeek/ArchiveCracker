@@ -10,13 +10,12 @@ if ($filename.EndsWith(".001")) {
     Write-Host "Combining multi-part archive..."
     $parts = Get-ChildItem -Filter "*.7z.*" | Sort-Object Name
     $combinedFilename = $filename.TrimEnd(".001") + ".7z"
+    $fs = New-Object System.IO.FileStream($combinedFilename, [System.IO.FileMode]::Append)
     foreach ($part in $parts) {
         $content = [System.IO.File]::ReadAllBytes($part.FullName)
-        $fs = [System.IO.File]::OpenWrite($combinedFilename)
-        $fs.Position = $fs.Length
         $fs.Write($content, 0, $content.Length)
-        $fs.Close()
     }
+    $fs.Close()
     $filename = $combinedFilename
 }
 
@@ -55,15 +54,17 @@ Write-Host "Running Hashcat on the hash..."
 
 if ([string]::IsNullOrEmpty($mask)) {
     # If no mask was provided, use a default one
-    $mask = "?a" * 50
+    $mask = "?a" * 10
 }
 
 $sessionName = $filename
 
+Set-Location -Path ".\hashcat\hashcat-6.2.6"
+
 if ($restore) {
     # If the -restore flag was provided, restore the previous session
-    & $hashcatPath --restore --session=$sessionName
+    & .\hashcat.exe --restore --session=$sessionName
 } else {
     # Otherwise, start a new session
-    & $hashcatPath -m 11600 -a 3 -i -w 4 --status-timer=10 --session=$sessionName $hash $mask
+    & .\hashcat.exe -m 11600 -a 3 -i -w 4 --status-timer=10 --session=$sessionName $hash $mask
 }
