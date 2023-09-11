@@ -75,7 +75,7 @@ public class PasswordService
             // Log.Information("Passwords attempted: {AttemptedPasswords}. Remaining: {RemainingPasswords}",
             //     _attemptedPasswords, _totalPasswords - _attemptedPasswords);
 
-            Console.Write("\rPasswords attempted: {0}. Remaining: {1}", _attemptedPasswords, _totalPasswords - _attemptedPasswords);
+            Console.Write("\rPasswords attempted: {0}. Remaining: {1}. Current password: {2}", _attemptedPasswords, _totalPasswords - _attemptedPasswords, password);
             
             if (!strategy.IsPasswordCorrect(file, password)) return Task.CompletedTask;
 

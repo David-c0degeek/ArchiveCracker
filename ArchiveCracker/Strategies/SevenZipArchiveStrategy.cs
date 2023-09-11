@@ -1,42 +1,62 @@
-﻿using SharpCompress.Archives;
-using SharpCompress.Archives.SevenZip;
+﻿using SharpCompress.Archives.SevenZip;
+using SharpCompress.Common;
 using SharpCompress.Readers;
 
-namespace ArchiveCracker.Strategies;
-
-internal class SevenZipArchiveStrategy : IArchiveStrategy
+namespace ArchiveCracker.Strategies
 {
-    public bool IsPasswordProtected(string file)
+    internal class SevenZipArchiveStrategy : IArchiveStrategy
     {
-        return new RarArchiveStrategy().IsPasswordProtected(file);
-    }
-
-    public bool IsPasswordCorrect(string file, string password)
-    {
-        try
+        public bool IsPasswordProtected(string file)
         {
-            using var archive = SevenZipArchive.Open(file, new ReaderOptions
+            try
             {
-                Password = password,
-                LookForHeader = true
-            });
-            var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
-
-            // If there are no entries or they are all directories, return false
-            if (firstEntry == null) return false;
-
-            // Try to extract the first non-directory entry
-            firstEntry.WriteTo(Stream.Null);
-
-            return true;
+                using var archive = SevenZipArchive.Open(file);
+                var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
+                
+                // If there are no entries or they are all directories, return false
+                if (firstEntry == null) return false;
+                
+                // Access some property to force an attempt to decrypt the metadata
+                _ = firstEntry.Size;
+                
+                return false;
+            }
+            catch (CryptographicException)
+            {
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
-        catch (SharpCompress.Common.CryptographicException)
+
+        public bool IsPasswordCorrect(string file, string password)
         {
-            return false;
-        }
-        catch
-        {
-            return false;
+            try
+            {
+                using var archive = SevenZipArchive.Open(file, new ReaderOptions
+                {
+                    Password = password
+                });
+                var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
+
+                // If there are no entries or they are all directories, return false
+                if (firstEntry == null) return false;
+                
+                // Access some property to force an attempt to decrypt the metadata
+                _ = firstEntry.Size;
+
+                return true;
+            }
+            catch (CryptographicException)
+            {
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

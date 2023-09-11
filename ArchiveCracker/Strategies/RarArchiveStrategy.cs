@@ -1,6 +1,7 @@
 ﻿using SharpCompress.Archives;
-using SharpCompress.Archives.Rar;
 using SharpCompress.Readers;
+using SharpCompress.Common;
+using SharpCompress.Readers.Rar;
 
 namespace ArchiveCracker.Strategies;
 
@@ -21,7 +22,7 @@ internal class RarArchiveStrategy : IArchiveStrategy
 
             return false;
         }
-        catch (SharpCompress.Common.CryptographicException)
+        catch (CryptographicException)
         {
             return true;
         }
@@ -35,27 +36,24 @@ internal class RarArchiveStrategy : IArchiveStrategy
     {
         try
         {
-            using var archive = RarArchive.Open(file, new ReaderOptions
+            using Stream stream = File.OpenRead(file);
+            var readerOptions = new ReaderOptions
             {
                 Password = password,
                 LookForHeader = true
-            });
-            var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
+            };
 
-            // If there are no entries or they are all directories, return false
-            if (firstEntry == null) return false;
-
-            // Try to extract the first non-directory entry
-            firstEntry.WriteTo(Stream.Null);
-
-            return true;
+            using var reader = RarReader.Open(stream, readerOptions);
+            return reader.MoveToNextEntry();
         }
-        catch (SharpCompress.Common.CryptographicException)
+        catch (CryptographicException)
         {
+            // Password is incorrect
             return false;
         }
-        catch
+        catch (Exception)
         {
+            // Some other error occurred
             return false;
         }
     }

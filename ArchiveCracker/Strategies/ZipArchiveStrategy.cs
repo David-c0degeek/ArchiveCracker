@@ -1,63 +1,50 @@
-﻿using SharpCompress.Archives;
-using SharpCompress.Archives.Zip;
+﻿using SharpCompress.Common;
 using SharpCompress.Readers;
+using SharpCompress.Readers.Zip;
 
-namespace ArchiveCracker.Strategies;
-
-internal class ZipArchiveStrategy : IArchiveStrategy
+namespace ArchiveCracker.Strategies
 {
-    public bool IsPasswordProtected(string file)
+    internal class ZipArchiveStrategy : IArchiveStrategy
     {
-        try
+        public bool IsPasswordProtected(string file)
         {
-            using var archive = ZipArchive.Open(file);
-            var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
-
-            // If there are no entries or they are all directories, return false
-            if (firstEntry == null) return false;
-
-            // Try to extract the first non-directory entry
-            firstEntry.WriteTo(Stream.Null);
-
-            return false;
-        }
-        catch (SharpCompress.Common.CryptographicException)
-        {
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public bool IsPasswordCorrect(string file, string password)
-    {
-        try
-        {
-            using var archive = ZipArchive.Open(file, new ReaderOptions
+            try
             {
-                Password = password,
-                LookForHeader = true
-            });
-            var firstEntry = archive.Entries.FirstOrDefault(e => !e.IsDirectory);
-
-            // If there are no entries or they are all directories, return false
-            if (firstEntry == null) return false;
-
-            // Try to extract the first non-directory entry
-            firstEntry.WriteTo(Stream.Null);
-
-            return true;
+                using Stream stream = File.OpenRead(file);
+                using var reader = ZipReader.Open(stream);
+                return reader.MoveToNextEntry() && reader.Entry.IsEncrypted;
+            }
+            catch
+            {
+                // Some other error occurred
+                return false;
+            }
         }
-        catch (SharpCompress.Common.CryptographicException)
+
+        public bool IsPasswordCorrect(string file, string password)
         {
-            return false;
-        }
-        catch
-        {
-            return false;
+            try
+            {
+                using Stream stream = File.OpenRead(file);
+                var readerOptions = new ReaderOptions
+                {
+                    Password = password,
+                    LookForHeader = true
+                };
+
+                using var reader = ZipReader.Open(stream, readerOptions);
+                return reader.MoveToNextEntry();
+            }
+            catch (CryptographicException)
+            {
+                // Password is incorrect
+                return false;
+            }
+            catch (Exception)
+            {
+                // Some other error occurred
+                return false;
+            }
         }
     }
-
 }
