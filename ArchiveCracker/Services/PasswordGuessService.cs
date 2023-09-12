@@ -30,8 +30,8 @@ namespace ArchiveCracker.Services
         private static void AddSingleWordVariants(ISet<string> guessPasswords, string word)
         {
             guessPasswords.Add(word);
-            guessPasswords.Add(word.ToUpper());
-            guessPasswords.Add(word.ToLower());
+            guessPasswords.Add(word.ToUpperInvariant());
+            guessPasswords.Add(word.ToLowerInvariant());
         }
 
         private static string[] SplitIntoWords(string text)
@@ -55,9 +55,9 @@ namespace ArchiveCracker.Services
 
         private static void AddMixedCaseVariants(ISet<string> guessPasswords, string text)
         {
-            // Assuming `text` is in lower case
+            text = text.ToLowerInvariant();
             guessPasswords.Add(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(text));
-            guessPasswords.Add(new string(text.Select((c, i) => i % 2 == 0 ? char.ToUpper(c) : c).ToArray()));
+            guessPasswords.Add(new string(text.Select((c, i) => i % 2 == 0 ? char.ToUpperInvariant(c) : c).ToArray()));
         }
     }
 }
