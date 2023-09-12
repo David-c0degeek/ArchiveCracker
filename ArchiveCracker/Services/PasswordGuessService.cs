@@ -32,6 +32,7 @@ namespace ArchiveCracker.Services
             guessPasswords.Add(word);
             guessPasswords.Add(word.ToUpperInvariant());
             guessPasswords.Add(word.ToLowerInvariant());
+            guessPasswords.Add(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(word));
         }
 
         private static string[] SplitIntoWords(string text)
