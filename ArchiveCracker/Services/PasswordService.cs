@@ -16,9 +16,12 @@ public class PasswordService
     private readonly ConcurrentDictionary<string, int> _foundPasswordsPerArchive = new();
     private int _totalArchives;
     private int _processedArchives;
-    private readonly TaskPool _taskPool;
 
-    public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath, string commonPasswordsFilePath, int maxDegreeOfParallelism)
+    private readonly TaskPool _taskPool;
+    private int _activeArchives; // Number of archives currently being processed
+
+    public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath,
+        string commonPasswordsFilePath, int maxDegreeOfParallelism)
     {
         _taskPool = new TaskPool(maxDegreeOfParallelism);
         _foundPasswords = foundPasswords;
@@ -38,7 +41,7 @@ public class PasswordService
     private static ReadOnlyCollection<string> LoadPasswords(string filePath)
     {
         if (!File.Exists(filePath)) return new ReadOnlyCollection<string>(new List<string>());
-            
+
         var passwords = File.ReadAllLines(filePath).ToList();
         return new ReadOnlyCollection<string>(passwords);
     }
@@ -51,21 +54,113 @@ public class PasswordService
         {
             Console.WriteLine($"Archive: {entry.Key}, Attempted Passwords: {entry.Value}");
         }
+
         foreach (var entry in _foundPasswordsPerArchive)
         {
             Console.WriteLine($"Archive: {entry.Key}, Found Passwords: {entry.Value}");
         }
     }
 
-    private async Task<bool> CheckPasswordsAsync(IArchiveStrategy strategy, string file, IEnumerable<string> passwords)
+    public async Task CheckMultipleArchivesWithQueue(
+        ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives, int maxDegreeOfParallelism)
+    {
+        InitializeQueue(out BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue, protectedArchives);
+        var producer = ProduceTasks(queue, protectedArchives);
+        var consumers = ConsumeTasks(queue, maxDegreeOfParallelism);
+
+        await producer;
+        await Task.WhenAll(consumers);
+    }
+
+    private void InitializeQueue(out BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue,
+        ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives)
+    {
+        _totalArchives = protectedArchives.Count;
+        queue = new BlockingCollection<KeyValuePair<IArchiveStrategy, string>>(_taskPool.Capacity);
+    }
+
+    private static Task ProduceTasks(BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue,
+        ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives)
+    {
+        return Task.Run(() =>
+        {
+            foreach (var (strategy, archives) in protectedArchives)
+            {
+                foreach (var archive in archives)
+                {
+                    queue.Add(new KeyValuePair<IArchiveStrategy, string>(strategy, archive));
+                }
+            }
+
+            queue.CompleteAdding();
+        });
+    }
+
+    private IEnumerable<Task> ConsumeTasks(BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue,
+        int maxDegreeOfParallelism)
+    {
+        var consumers = new List<Task>();
+        for (var i = 0; i < maxDegreeOfParallelism; i++)
+        {
+            var consumer = CreateConsumerTask(queue);
+            consumers.Add(consumer);
+        }
+
+        return consumers;
+    }
+
+    private Task CreateConsumerTask(BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue)
+    {
+        return Task.Run(async () =>
+        {
+            foreach (var item in queue.GetConsumingEnumerable())
+            {
+                await ProcessArchive(item);
+            }
+        });
+    }
+
+    private async Task ProcessArchive(KeyValuePair<IArchiveStrategy, string> item)
+    {
+        try
+        {
+            Interlocked.Increment(ref _activeArchives);
+
+            var subPoolSize = CalculateSubPoolSize();
+            var subTaskPool = new TaskPool(subPoolSize);
+
+            var found = await CheckPasswordsAsync(item.Key, item.Value, _commonPasswords, subTaskPool);
+            if (!found)
+            {
+                await CheckPasswordsAsync(item.Key, item.Value, _userPasswords, subTaskPool);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("An error occurred: {Message}", ex.Message);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeArchives);
+        }
+    }
+
+    private int CalculateSubPoolSize()
+    {
+        var remainingSlots = _taskPool.Capacity - _activeArchives;
+        return remainingSlots / Math.Max(1, _activeArchives); // Math.Max to prevent division by zero
+    }
+
+    private async Task<bool> CheckPasswordsAsync(IArchiveStrategy strategy, string file, IEnumerable<string> passwords,
+        TaskPool subTaskPool)
     {
         var cancellationTokenSource = new CancellationTokenSource();
         var foundPassword = false;
 
-        var tasks = passwords.Select(password => _taskPool.Run(() => 
+        var tasks = passwords.Select(password => subTaskPool.Run(() =>
         {
             if (cancellationTokenSource.IsCancellationRequested) return Task.CompletedTask;
-        
+
             IncrementAttemptedPasswordsForArchive(file);
 
             if (!strategy.IsPasswordCorrect(file, password)) return Task.CompletedTask;
@@ -91,7 +186,8 @@ public class PasswordService
 
         return foundPassword;
     }
-        
+
+
     private static void IncrementValueInConcurrentDictionary(ConcurrentDictionary<string, int> dictionary, string key)
     {
         var newValue = 0;
@@ -110,50 +206,5 @@ public class PasswordService
     private void IncrementFoundPasswordsForArchive(string file)
     {
         IncrementValueInConcurrentDictionary(_foundPasswordsPerArchive, file);
-    }
-
-    public async Task CheckMultipleArchivesWithQueue(ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives, int maxDegreeOfParallelism)
-    {
-        _totalArchives = protectedArchives.Count;
-        var queue = new BlockingCollection<KeyValuePair<IArchiveStrategy, string>>(maxDegreeOfParallelism);
-
-        var producer = Task.Run(() =>
-        {
-            foreach (var (strategy, archives) in protectedArchives)
-            {
-                foreach (var archive in archives)
-                {
-                    queue.Add(new KeyValuePair<IArchiveStrategy, string>(strategy, archive));
-                }
-            }
-            queue.CompleteAdding();
-        });
-
-        var consumers = new List<Task>();
-        for (var i = 0; i < maxDegreeOfParallelism; i++)
-        {
-            var consumer = Task.Run(async () =>
-            {
-                foreach (var item in queue.GetConsumingEnumerable())
-                {
-                    try
-                    {
-                        var found = await CheckPasswordsAsync(item.Key, item.Value, _commonPasswords);
-                        if (!found)
-                        {
-                            await CheckPasswordsAsync(item.Key, item.Value, _userPasswords);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error("An error occurred: {Message}", ex.Message);
-                    }
-                }
-            });
-            consumers.Add(consumer);
-        }
-
-        await producer;
-        await Task.WhenAll(consumers);
     }
 }

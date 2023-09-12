@@ -2,11 +2,18 @@
 
 public class TaskPool
 {
-    private readonly SemaphoreSlim _semaphore;
+    private SemaphoreSlim _semaphore;
 
     public TaskPool(int degreeOfParallelism)
     {
         _semaphore = new SemaphoreSlim(degreeOfParallelism);
+    }
+
+    public int Capacity => _semaphore.CurrentCount;
+
+    public void Resize(int newCapacity)
+    {
+        _semaphore = new SemaphoreSlim(newCapacity);
     }
 
     public async Task Run(Func<Task> taskFactory)
