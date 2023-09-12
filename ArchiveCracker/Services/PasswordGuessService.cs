@@ -2,7 +2,7 @@
 
 namespace ArchiveCracker.Services
 {
-    public class PasswordGuessService
+    public static class PasswordGuessService
     {
         public static IEnumerable<string> GenerateGuessPasswords(string filename)
         {
