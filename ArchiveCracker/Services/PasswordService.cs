@@ -64,7 +64,7 @@ public class PasswordService
     public async Task CheckMultipleArchivesWithQueue(
         ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives, int maxDegreeOfParallelism)
     {
-        InitializeQueue(out BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue, protectedArchives);
+        InitializeQueue(out var queue, protectedArchives);
         var producer = ProduceTasks(queue, protectedArchives);
         var consumers = ConsumeTasks(queue, maxDegreeOfParallelism);
 
