@@ -19,13 +19,13 @@ public class PasswordService
 
     private readonly TaskPool _taskPool;
     private int _activeArchives; // Number of archives currently being processed
-
+    
     public PasswordService(ConcurrentBag<ArchivePasswordPair> foundPasswords, string userPasswordsFilePath,
         string commonPasswordsFilePath, int maxDegreeOfParallelism)
     {
         _taskPool = new TaskPool(maxDegreeOfParallelism);
         _foundPasswords = foundPasswords;
-
+        
         _commonPasswords = LoadPasswords(commonPasswordsFilePath);
         Log.Information("{Count} common passwords loaded", _commonPasswords.Count);
 
@@ -129,7 +129,17 @@ public class PasswordService
             var subPoolSize = CalculateSubPoolSize();
             var subTaskPool = new TaskPool(subPoolSize);
 
+            // 1. Try common passwords
             var found = await CheckPasswordsAsync(item.Key, item.Value, _commonPasswords, subTaskPool);
+            
+            // 2. Try guessed passwords based on metadata and filename
+            if (!found)
+            {
+                var guessPasswords = PasswordGuessService.GenerateGuessPasswords(item.Value);
+                found = await CheckPasswordsAsync(item.Key, item.Value, guessPasswords, subTaskPool);
+            }
+
+            // 3. Try user-provided passwords
             if (!found)
             {
                 await CheckPasswordsAsync(item.Key, item.Value, _userPasswords, subTaskPool);
