@@ -4,6 +4,22 @@ namespace ArchiveCracker.Services
 {
     public static class PasswordGuessService
     {
+        private static readonly Dictionary<char, string[]> LeetReplacements = new()
+        {
+            { 'a', new[] { "4", "@" } },
+            { 'b', new[] { "8" } },
+            { 'c', new[] { "<", "(" } },
+            { 'e', new[] { "3" } },
+            { 'g', new[] { "9" } },
+            { 'h', new[] { "#", "4" } },
+            { 'i', new[] { "1", "!", "|" } },
+            { 'l', new[] { "1", "|" } },
+            { 'o', new[] { "0" } },
+            { 's', new[] { "$", "5" } },
+            { 't', new[] { "7", "+" } },
+            { 'z', new[] { "2" } }
+        };
+
         public static IEnumerable<string> GenerateGuessPasswords(string filename)
         {
             var guessPasswords = new HashSet<string>();
@@ -14,17 +30,54 @@ namespace ArchiveCracker.Services
 
             // 1.1 Consider spaces: split filename into words and generate combinations
             var words = SplitIntoWords(nameWithoutExtension);
-            if (words.Length <= 1) return guessPasswords;
-            
-            foreach (var word in words)
+            if (words.Length > 1)
             {
-                AddSingleWordVariants(guessPasswords, word);
+                foreach (var word in words)
+                {
+                    AddSingleWordVariants(guessPasswords, word);
+                }
+
+                // Generate combinations of 2 or more words
+                AddWordCombinations(guessPasswords, words);
             }
 
-            // Generate combinations of 2 or more words
-            AddWordCombinations(guessPasswords, words);
+            AddLeetCombinations(guessPasswords);
 
             return guessPasswords;
+        }
+
+        private static void AddLeetCombinations(HashSet<string> guessPasswords)
+        {
+            var leetPasswords = new HashSet<string>();
+
+            foreach (var guess in guessPasswords)
+            {
+                GenerateLeetVariants(guess, "", 0, leetPasswords);
+            }
+
+            foreach (var leet in leetPasswords)
+            {
+                guessPasswords.Add(leet);
+            }
+        }
+
+        private static void GenerateLeetVariants(string original, string current, int index, ISet<string> leetPasswords)
+        {
+            if (index == original.Length)
+            {
+                leetPasswords.Add(current);
+                return;
+            }
+
+            var ch = original[index];
+            GenerateLeetVariants(original, current + ch, index + 1, leetPasswords);
+
+            if (!LeetReplacements.TryGetValue(ch, out var replacements)) return;
+
+            foreach (var replacement in replacements)
+            {
+                GenerateLeetVariants(original, current + replacement, index + 1, leetPasswords);
+            }
         }
 
         private static void AddSingleWordVariants(ISet<string> guessPasswords, string word)
