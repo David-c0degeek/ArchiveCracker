@@ -103,7 +103,8 @@ public static class Program
             FoundPasswords,
             _userPasswordsPath!,
             _commonPasswordsPath!,
-            GetMaxDegreeOfParallelism());
+            GetMaxDegreeOfParallelism(),
+            _fileService);
 
         _archiveService = new ArchiveService(
             FoundPasswords);
@@ -130,7 +131,7 @@ public static class Program
         _protectedArchives = await _archiveService.LoadArchivesAsync(_zipPath!);
 
         // Check Passwords
-        await _passwordService.CheckMultipleArchivesWithQueue(_protectedArchives, GetMaxDegreeOfParallelism());
+        await _passwordService.CheckMultipleArchivesWithQueue(_protectedArchives);
 
     }
 
