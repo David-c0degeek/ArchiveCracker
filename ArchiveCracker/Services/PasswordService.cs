@@ -8,6 +8,7 @@ namespace ArchiveCracker.Services;
 
 public class PasswordService
 {
+    private const int HardMaxSimultaneousArchivesToTry = 4;
     private readonly ConcurrentBag<string> _commonPasswords;
     private readonly ReadOnlyCollection<string> _userPasswords;
     private readonly ConcurrentBag<ArchivePasswordPair> _foundPasswords;
@@ -74,7 +75,10 @@ public class PasswordService
 
     private int CalculateMaxParallelArchives()
     {
-        return Math.Max(1, _taskPool.Capacity / 2);
+        var maxCapacity = Math.Max(1, _taskPool.Capacity / 2);
+        return maxCapacity > HardMaxSimultaneousArchivesToTry 
+            ? HardMaxSimultaneousArchivesToTry
+            : maxCapacity;
     }
     
     public async Task CheckMultipleArchivesWithQueue(
