@@ -165,19 +165,36 @@ public class PasswordService
             Log.Information("Trying common passwords for archive: {Archive}", item.Value);
             var found = await CheckPasswordsAsync(item.Key, item.Value, _commonPasswords, subTaskPool);
 
+            IEnumerable<string>? guessPasswords = null;
             // 2. Try guessed passwords
             if (!found)
             {
                 Log.Information("Trying guessed passwords for archive: {Archive}", item.Value);
-                var guessPasswords = PasswordGuessService.GenerateGuessPasswords(item.Value);
+                guessPasswords = PasswordGuessService.GenerateGuessPasswords(item.Value);
                 found = await CheckPasswordsAsync(item.Key, item.Value, guessPasswords, subTaskPool);
             }
-
-            // 3. Try user-provided passwords
+            
+            // 3. Try transformation rules
+            if (!found && guessPasswords is not null)
+            {
+                Log.Information("Trying transformation rules on guessed passwords for archive: {Archive}", item.Value);
+                var transformedGuesses = guessPasswords.SelectMany(PasswordGuessService.ApplyTransformationRules);
+                found = await CheckPasswordsAsync(item.Key, item.Value, transformedGuesses, subTaskPool);
+            }
+            
+            // 4. Try user-provided passwords
             if (!found)
             {
                 Log.Information("Trying user passwords for archive: {Archive}", item.Value);
                 await CheckPasswordsAsync(item.Key, item.Value, _userPasswords, subTaskPool);
+            }
+            
+            // 5. Try transformations on user-provided passwords
+            if (!found)
+            {
+                Log.Information("Trying transformation rules on user passwords for archive: {Archive}", item.Value);
+                var transformedGuesses = _userPasswords.SelectMany(PasswordGuessService.ApplyTransformationRules);
+                found = await CheckPasswordsAsync(item.Key, item.Value, transformedGuesses, subTaskPool);
             }
 
             if (!found)

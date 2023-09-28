@@ -20,7 +20,7 @@ namespace ArchiveCracker.Services
             { 'z', new[] { "2" } }
         };
 
-        public static IEnumerable<string> GenerateGuessPasswords(string filename)
+        public static List<string> GenerateGuessPasswords(string filename)
         {
             var guessPasswords = new HashSet<string>();
 
@@ -43,7 +43,8 @@ namespace ArchiveCracker.Services
 
             AddLeetCombinations(guessPasswords);
 
-            return guessPasswords;
+            return guessPasswords
+                .ToList();
         }
 
         private static void AddLeetCombinations(HashSet<string> guessPasswords)
@@ -112,6 +113,27 @@ namespace ArchiveCracker.Services
             text = text.ToLowerInvariant();
             guessPasswords.Add(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(text));
             guessPasswords.Add(new string(text.Select((c, i) => i % 2 == 0 ? char.ToUpperInvariant(c) : c).ToArray()));
+        }
+        
+        public static IEnumerable<string> ApplyTransformationRules(string password)
+        {
+            // Reuse the transformation rules logic from RuleBasedDictionaryAttackService
+            var rules = GetTransformationRules();
+            return rules.Select(rule => rule(password));
+        }
+        
+        private static List<Func<string, string>> GetTransformationRules()
+        {
+            return new List<Func<string, string>>
+            {
+                password => password + "123",
+                password => password + "!",
+                password => password + "?",
+                password => char.ToUpper(password[0]) + password[1..],
+                password => new string(password.Reverse().ToArray()),
+                password => password + DateTime.Now.Year,
+                password => string.Concat(password, DateTime.Now.Year.ToString().AsSpan(2))
+            };
         }
     }
 }
