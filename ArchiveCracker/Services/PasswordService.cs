@@ -151,12 +151,6 @@ public class PasswordService
     private async Task ProcessArchive(KeyValuePair<IArchiveStrategy, string> item)
     {
         Log.Information("Processing started for archive: {Archive}", item.Value);
-
-        if (!_processedArchiveSet.TryAdd(item.Value, 0))
-        {
-            Log.Information("Skipping already processed archive: {Archive}", item.Value);
-            return;
-        }
         
         Interlocked.Increment(ref _activeArchives);
 
