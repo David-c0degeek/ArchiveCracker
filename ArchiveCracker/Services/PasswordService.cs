@@ -16,12 +16,10 @@ public class PasswordService
 
     private readonly ConcurrentDictionary<string, int> _attemptedPasswordsPerArchive = new();
     private readonly ConcurrentDictionary<string, int> _foundPasswordsPerArchive = new();
-
+    private readonly ConcurrentDictionary<string, byte> _processedArchiveSet = new();
+    
     private int _totalArchives;
     private int _processedArchives;
-
-    private readonly HashSet<string> _processedArchiveSet = new();
-    private readonly object _archiveSetLock = new();
 
     private readonly TaskPool _taskPool;
     private int _activeArchives; // Number of archives currently being processed
@@ -132,12 +130,19 @@ public class PasswordService
         return consumers;
     }
 
-    private Task CreateConsumerTask(BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue)
+    private Task CreateConsumerTask(
+        BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue)
     {
         return Task.Run(async () =>
         {
             foreach (var item in queue.GetConsumingEnumerable())
             {
+                if (!_processedArchiveSet.TryAdd(item.Value, 0))
+                {
+                    Log.Information("Skipping already processed archive: {Archive}", item.Value);
+                    continue;
+                }
+
                 await ProcessArchive(item);
             }
         });
@@ -147,26 +152,21 @@ public class PasswordService
     {
         Log.Information("Processing started for archive: {Archive}", item.Value);
 
-        lock (_archiveSetLock)
+        if (!_processedArchiveSet.TryAdd(item.Value, 0))
         {
-            if (_processedArchiveSet.Contains(item.Value))
-            {
-                Log.Information("Skipping already processed archive: {Archive}", item.Value);
-                return;
-            }
-
-            _processedArchiveSet.Add(item.Value);
+            Log.Information("Skipping already processed archive: {Archive}", item.Value);
+            return;
         }
+        
+        Interlocked.Increment(ref _activeArchives);
+
+        var subPoolSize = CalculateSubPoolSize();
+        Log.Information("SubPool size calculated: {Size}", subPoolSize);
+
+        var subTaskPool = new TaskPool(subPoolSize);
 
         try
         {
-            Interlocked.Increment(ref _activeArchives);
-
-            var subPoolSize = CalculateSubPoolSize();
-            Log.Information("SubPool size calculated: {Size}", subPoolSize);
-
-            var subTaskPool = new TaskPool(subPoolSize);
-
             // 1. Try common passwords
             Log.Information("Trying common passwords for archive: {Archive}", item.Value);
             var found = await CheckPasswordsAsync(item.Key, item.Value, _commonPasswords, subTaskPool);
@@ -272,14 +272,11 @@ public class PasswordService
         return Math.Max(1, subPoolSize); // Ensure that subPoolSize is at least 1
     }
 
-    private static void IncrementValueInConcurrentDictionary(ConcurrentDictionary<string, int> dictionary, string key)
+    private static void IncrementValueInConcurrentDictionary(
+        ConcurrentDictionary<string, int> dictionary,
+        string key)
     {
-        var newValue = 0;
-        dictionary.AddOrUpdate(
-            key,
-            (_) => Interlocked.Increment(ref newValue),
-            (_, oldValue) => Interlocked.Increment(ref oldValue)
-        );
+        dictionary.AddOrUpdate(key, 1, (_, oldValue) => oldValue + 1);
     }
 
     private void IncrementAttemptedPasswordsForArchive(string file)
