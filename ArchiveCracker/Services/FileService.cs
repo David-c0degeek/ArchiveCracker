@@ -88,7 +88,7 @@ public class FileService
                         File.AppendAllText(_foundPasswordsFilePath, operation.Data);
                         break;
                     case FileOperation.OperationType.NotFound:
-                        File.AppendAllText(_foundPasswordsFilePath, operation.Data);
+                        File.AppendAllText(_notFoundPasswordsFilePath, operation.Data);
                         break;
                     default:
                         Log.Error("operation type: {OperationType} not supported", operation.Type);
