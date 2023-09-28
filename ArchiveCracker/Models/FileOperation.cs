@@ -5,7 +5,8 @@ public class FileOperation
     public enum OperationType
     {
         AppendCommonPassword,
-        SaveFoundPasswords
+        SaveFoundPasswords,
+        NotFound
     }
 
     public OperationType Type { get; init; }

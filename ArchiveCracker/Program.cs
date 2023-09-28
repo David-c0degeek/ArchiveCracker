@@ -20,6 +20,7 @@ public static class Program
     private const string CommonPasswordsFileName = "common_passwords.txt";
     private const string UserPasswordsFileName = "user_passwords.txt";
     private const string FoundPasswordsFileName = "found_passwords.txt";
+    private const string NotFoundPasswordsFileName = "not_found_passwords.txt";
 
     private static FileService _fileService = null!;
     private static PasswordService _passwordService = null!;
@@ -28,6 +29,7 @@ public static class Program
     private static string? _userPasswordsPath;
     private static string? _commonPasswordsPath;
     private static string? _foundPasswordsPath;
+    private static string? _notFoundPasswordsPath;
 
     public static async Task Main(string[] args)
     {
@@ -78,6 +80,10 @@ public static class Program
         _foundPasswordsPath = string.IsNullOrWhiteSpace(options.FoundPasswordsFilePath)
             ? Path.Combine(Environment.CurrentDirectory, FoundPasswordsFileName)
             : options.FoundPasswordsFilePath;
+        
+        _notFoundPasswordsPath = string.IsNullOrWhiteSpace(options.NotFoundPasswordsFilePath)
+            ? Path.Combine(Environment.CurrentDirectory, NotFoundPasswordsFileName)
+            : options.NotFoundPasswordsFilePath;
 
         var errorMessage = new StringBuilder();
 
@@ -97,6 +103,7 @@ public static class Program
             _commonPasswordsPath!,
             _userPasswordsPath!,
             _foundPasswordsPath!,
+            _notFoundPasswordsPath!,
             FileOperationsQueue);
 
         _passwordService = new PasswordService(

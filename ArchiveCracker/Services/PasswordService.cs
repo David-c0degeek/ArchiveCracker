@@ -97,7 +97,7 @@ public class PasswordService
     private void InitializeQueue(out BlockingCollection<KeyValuePair<IArchiveStrategy, string>> queue,
         ConcurrentDictionary<IArchiveStrategy, ConcurrentBag<string>> protectedArchives)
     {
-        _totalArchives = protectedArchives.Values.Sum(bag => bag.Count); // Corrected
+        _totalArchives = protectedArchives.Values.Sum(bag => bag.Count);
         Log.Information("Total archives to be processed: {Count}", _totalArchives);
         queue = new BlockingCollection<KeyValuePair<IArchiveStrategy, string>>(_taskPool.Capacity);
     }
@@ -184,6 +184,12 @@ public class PasswordService
             {
                 Log.Information("Trying user passwords for archive: {Archive}", item.Value);
                 await CheckPasswordsAsync(item.Key, item.Value, _userPasswords, subTaskPool);
+            }
+
+            if (!found)
+            {
+                Log.Information("Failed finding the password for archive: {Archive}", item.Value);
+                _fileService.SaveNotFound(item.Value);
             }
         }
         catch (Exception ex)

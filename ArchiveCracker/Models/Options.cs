@@ -17,4 +17,7 @@ public class Options
     
     [Option('f', "foundPasswordsPath", Required = false, HelpText = "Path to the output file containing all found passwords")]
     public string? FoundPasswordsFilePath { get; set; } = string.Empty;
+    
+    [Option('n', "notFoundPasswordsPath", Required = false, HelpText = "Path to the output file containing all files we couldn't find the password of")]
+    public string? NotFoundPasswordsFilePath { get; set; } = string.Empty;
 }

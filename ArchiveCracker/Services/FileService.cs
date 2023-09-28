@@ -9,13 +9,15 @@ public class FileService
 {
     private readonly string _commonPasswordsFilePath;
     private readonly string _foundPasswordsFilePath;
+    private readonly string _notFoundPasswordsFilePath;
     private BlockingCollection<FileOperation> FileOperationsQueue { get; }
 
-    public FileService(string commonPasswordsPath, string userPasswordsPath, string foundPasswordsPath, BlockingCollection<FileOperation> fileOperationsQueue)
+    public FileService(string commonPasswordsPath, string userPasswordsPath, string foundPasswordsPath, string notFoundPasswordsFilePath, BlockingCollection<FileOperation> fileOperationsQueue)
     {
         FileOperationsQueue = fileOperationsQueue;
         _commonPasswordsFilePath = commonPasswordsPath;
         _foundPasswordsFilePath = foundPasswordsPath;
+        _notFoundPasswordsFilePath = notFoundPasswordsFilePath;
         
         if (!File.Exists(commonPasswordsPath))
         {
@@ -30,6 +32,11 @@ public class FileService
         if (!File.Exists(foundPasswordsPath))
         {
             File.Create(foundPasswordsPath).Dispose();
+        }
+        
+        if (!File.Exists(notFoundPasswordsFilePath))
+        {
+            File.Create(notFoundPasswordsFilePath).Dispose();
         }
     }
 
@@ -51,6 +58,16 @@ public class FileService
             Data = formattedPassword
         });
     }
+    
+    public void SaveNotFound(string file)
+    {
+        var formattedPassword = $"File: {file}{Environment.NewLine}";
+        FileOperationsQueue.Add(new FileOperation
+        {
+            Type = FileOperation.OperationType.NotFound,
+            Data = formattedPassword
+        });
+    }
 
     public void FileOperationsWorker(CancellationToken cancellationToken)
     {
@@ -68,6 +85,9 @@ public class FileService
                         File.AppendAllText(_commonPasswordsFilePath, operation.Data + Environment.NewLine);
                         break;
                     case FileOperation.OperationType.SaveFoundPasswords:
+                        File.AppendAllText(_foundPasswordsFilePath, operation.Data);
+                        break;
+                    case FileOperation.OperationType.NotFound:
                         File.AppendAllText(_foundPasswordsFilePath, operation.Data);
                         break;
                     default:
